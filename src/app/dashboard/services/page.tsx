@@ -157,7 +157,7 @@ export default function ServicesPage() {
         </div>
         <select className="rounded-md border px-3 py-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="all">All Types</option>
-          <option value="amc_service">AMC Service</option>
+          <option value="amc_service">Recurring Service</option>
           <option value="paid_service">Paid Service</option>
           <option value="installation">Installation</option>
         </select>
