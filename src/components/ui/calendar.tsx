@@ -20,9 +20,9 @@ function Calendar({ className, classNames, ...props }: React.ComponentProps<type
         weekdays: 'flex',
         weekday: 'text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]',
         week: 'flex w-full mt-2',
-        day: 'h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20',
+        day: 'h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20 [&.rdp-selected]:bg-transparent',
         day_button: cn(
-          'inline-flex items-center justify-center rounded-md text-sm ring-offset-background transition-colors',
+          'inline-flex items-center justify-center text-sm ring-offset-background transition-colors',
           'hover:bg-accent hover:text-accent-foreground',
           'h-9 w-9 p-0 font-normal aria-selected:opacity-100'
         ),
@@ -30,9 +30,9 @@ function Calendar({ className, classNames, ...props }: React.ComponentProps<type
         today: 'bg-accent text-accent-foreground rounded-md',
         outside: 'text-muted-foreground opacity-50',
         disabled: 'text-muted-foreground opacity-50',
-        range_middle: 'aria-selected:bg-accent aria-selected:text-accent-foreground',
-        range_start: 'rounded-l-md',
-        range_end: 'rounded-r-md',
+        range_middle: 'bg-blue-100 text-blue-900 rounded-none',
+        range_start: 'bg-primary text-primary-foreground rounded-l-md rounded-r-none',
+        range_end: 'bg-primary text-primary-foreground rounded-r-md rounded-l-none',
         hidden: 'invisible',
         ...classNames,
       }}
