@@ -1,8 +1,14 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
-const FROM_EMAIL = 'Base Water Chemicals <onboarding@resend.dev>';
+const FROM_EMAIL = `Base Water Chemicals <${process.env.GMAIL_USER || 'info@abijithcb.com'}>`;
 const COMPANY_NAME = 'Base Water Chemicals';
 const COMPANY_PHONE = '+91 9876543210';
 
@@ -80,7 +86,7 @@ export async function sendServiceScheduledEmail(params: {
   `);
 
   try {
-    await resend.emails.send({
+    await transporter.sendMail({
       from: FROM_EMAIL,
       to: params.customerEmail,
       subject: `Service Scheduled - ${params.serviceNumber} | ${COMPANY_NAME}`,
@@ -136,7 +142,7 @@ export async function sendServiceCompletedEmail(params: {
   `);
 
   try {
-    await resend.emails.send({
+    await transporter.sendMail({
       from: FROM_EMAIL,
       to: params.customerEmail,
       subject: `Service Completed - ${params.serviceNumber} | ${COMPANY_NAME}`,
@@ -182,7 +188,7 @@ export async function sendServiceReminderEmail(params: {
   `);
 
   try {
-    await resend.emails.send({
+    await transporter.sendMail({
       from: FROM_EMAIL,
       to: params.customerEmail,
       subject: `Service Reminder (${params.daysUntil} days) - ${params.serviceNumber} | ${COMPANY_NAME}`,
