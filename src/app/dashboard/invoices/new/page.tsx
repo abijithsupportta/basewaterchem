@@ -18,7 +18,7 @@ import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { invoiceSchema } from '@/lib/validators';
 import { useCustomers } from '@/hooks/use-customers';
 import { formatCurrency } from '@/lib/utils';
-import { DEFAULT_TAX_PERCENT, AMC_PERIOD_OPTIONS } from '@/lib/constants';
+import { DEFAULT_TAX_PERCENT } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function NewInvoicePage() {
@@ -137,7 +137,7 @@ function NewInvoiceContent() {
         if (srvError) throw srvError;
       }
 
-      toast.success(amc_enabled ? 'Invoice created with AMC!' : 'Invoice created!');
+      toast.success(amc_enabled ? 'Invoice created with recurring service!' : 'Invoice created!');
       router.push(`/dashboard/invoices/${invoice.id}`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to create invoice');
@@ -145,7 +145,12 @@ function NewInvoiceContent() {
   };
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));
-  const amcPeriodOptions = AMC_PERIOD_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }));
+  const amcPeriodOptions = [
+    { value: '3', label: '3 Months' },
+    { value: '4', label: '4 Months' },
+    { value: '6', label: '6 Months' },
+    { value: '12', label: '12 Months' },
+  ];
 
   const handleAddCustomer = async () => {
     if (!newCust.full_name || !newCust.phone || !newCust.address_line1) {
@@ -252,20 +257,20 @@ function NewInvoiceContent() {
           </CardContent>
         </Card>
 
-        {/* AMC Section */}
+        {/* Recurring Service Section */}
         <Card className="max-w-3xl border-blue-200">
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" {...register('amc_enabled')} className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                <span>Enable AMC</span>
+                <span>Schedule Recurring Service</span>
               </label>
             </CardTitle>
           </CardHeader>
           {amcEnabled && (
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>AMC Period *</Label>
+                <Label>Service Interval *</Label>
                 <SimpleSelect
                   options={amcPeriodOptions}
                   value={String(watch('amc_period_months') || 3)}
@@ -274,7 +279,7 @@ function NewInvoiceContent() {
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                An AMC contract will be created. The first AMC service will be scheduled {watch('amc_period_months') || 3} months from the invoice date. After each service is completed, the next one is automatically scheduled.
+                A recurring service will be scheduled {watch('amc_period_months') || 3} months from the invoice date. After each service is completed, the next one is automatically scheduled.
               </p>
             </CardContent>
           )}

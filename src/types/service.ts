@@ -1,5 +1,3 @@
-import type { AmcContract } from './amc';
-
 export type ServiceType =
   | 'amc_service'
   | 'paid_service'
@@ -77,7 +75,12 @@ export interface ServiceWithDetails extends Service {
     full_name: string;
     phone?: string;
   } | null;
-  amc_contract?: AmcContract | null;
+  amc_contract?: {
+    id: string;
+    contract_number: string;
+    status: string;
+    service_interval_months: number;
+  } | null;
 }
 
 export interface ServiceFormData {

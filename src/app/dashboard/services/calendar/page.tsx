@@ -132,7 +132,7 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Service Calendar</h1>
-          <p className="text-muted-foreground">View scheduled services and AMC by date</p>
+          <p className="text-muted-foreground">View scheduled and completed services by date</p>
         </div>
         <Button variant="outline" onClick={goToday}>
           <CalendarDays className="mr-2 h-4 w-4" /> Today

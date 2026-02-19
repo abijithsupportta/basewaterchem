@@ -1,5 +1,4 @@
 export { CustomerRepository } from './customer.repository';
 export { ServiceRepository } from './service.repository';
-export { AmcRepository } from './amc.repository';
 export { InvoiceRepository } from './invoice.repository';
 export { DashboardRepository } from './notification.repository';

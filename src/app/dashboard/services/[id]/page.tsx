@@ -59,7 +59,7 @@ export default function ServiceDetailPage() {
     const supabase = createBrowserClient();
     supabase
       .from('services')
-      .select('*, customer:customers(*), amc_contract:amc_contracts(id, contract_number, status)')
+      .select('*, customer:customers(*)')
       .eq('id', id)
       .single()
       .then(({ data }) => {
@@ -131,7 +131,7 @@ export default function ServiceDetailPage() {
               payment_status: 'not_applicable',
             });
 
-            toast.success(`Marked as done! Next AMC scheduled for ${nextDateStr}`);
+            toast.success(`Marked as done! Next service scheduled for ${nextDateStr}`);
           } else {
             await supabase.from('amc_contracts').update({
               services_completed: (amcData.services_completed || 0) + 1,
@@ -220,7 +220,7 @@ export default function ServiceDetailPage() {
               payment_status: 'not_applicable',
             });
 
-            toast.success(`Service completed! Next AMC scheduled for ${nextDateStr}`);
+            toast.success(`Service completed! Next service scheduled for ${nextDateStr}`);
           } else {
             // Just update services_completed count
             await supabase.from('amc_contracts').update({
@@ -273,7 +273,6 @@ export default function ServiceDetailPage() {
   }
 
   const customer = service.customer as any;
-  const amcContract = service.amc_contract as any;
 
   return (
     <div className="space-y-6">
@@ -326,19 +325,6 @@ export default function ServiceDetailPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* AMC Contract Link */}
-      {amcContract && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">AMC Contract</CardTitle></CardHeader>
-          <CardContent>
-            <Link href={`/dashboard/amc/${amcContract.id}`} className="hover:underline">
-              <p className="font-medium">{amcContract.contract_number}</p>
-              <Badge variant="outline" className={getStatusColor(amcContract.status)}>{amcContract.status}</Badge>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Amount & Payment */}
       <Card>

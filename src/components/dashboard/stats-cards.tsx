@@ -13,14 +13,11 @@ import { formatCurrency } from '@/lib/utils';
 
 const defaultStats: DashboardStats = {
   total_customers: 0,
-  active_amc_contracts: 0,
+  scheduled_services: 0,
   todays_services: 0,
   overdue_services: 0,
   this_week_services: 0,
-  amc_expiring_soon: 0,
   pending_payments: 0,
-  amc_services_this_month: 0,
-  amc_services_this_week: 0,
   revenue_this_month: 0,
 };
 
@@ -48,7 +45,7 @@ export function StatsCards() {
     { title: 'Total Customers', value: stats.total_customers, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
     { title: "Today's Services", value: stats.todays_services, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { title: 'This Week', value: stats.this_week_services, icon: Calendar, color: 'text-green-600', bg: 'bg-green-50' },
-    { title: 'Scheduled Services', value: stats.active_amc_contracts, icon: FileCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { title: 'Scheduled Services', value: stats.scheduled_services, icon: FileCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
     { title: 'Overdue Services', value: stats.overdue_services, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
     { title: 'Revenue This Month', value: formatCurrency(stats.revenue_this_month), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
     { title: 'Pending Payments', value: stats.pending_payments, icon: CreditCard, color: 'text-rose-600', bg: 'bg-rose-50' },

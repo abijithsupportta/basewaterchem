@@ -15,7 +15,7 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 export const SERVICE_TYPE_LABELS: Record<string, string> = {
-  amc_service: 'AMC Service',
+  amc_service: 'Recurring Service',
   paid_service: 'Paid Service',
   installation: 'Installation',
 };
@@ -44,20 +44,6 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   overdue: 'Overdue',
   cancelled: 'Cancelled',
 };
-
-export const AMC_STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  expired: 'Expired',
-  cancelled: 'Cancelled',
-  pending_renewal: 'Pending Renewal',
-};
-
-export const AMC_PERIOD_OPTIONS = [
-  { value: 3, label: '3 Months' },
-  { value: 4, label: '4 Months' },
-  { value: 6, label: '6 Months' },
-  { value: 12, label: '12 Months' },
-];
 
 export const TIME_SLOTS = ['Morning (9-12)', 'Afternoon (12-3)', 'Evening (3-6)'];
 

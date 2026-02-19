@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin,
-  Wrench, ShieldCheck, Plus, FileText, Package
+  Wrench, Plus, FileText, Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor, formatPhone } from '@/lib/utils';
-import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, AMC_STATUS_LABELS } from '@/lib/constants';
+import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function CustomerDetailPage() {
@@ -21,7 +21,6 @@ export default function CustomerDetailPage() {
   const router = useRouter();
   const [customer, setCustomer] = useState<any>(null);
   const [services, setServices] = useState<any[]>([]);
-  const [amcContracts, setAmcContracts] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,15 +30,13 @@ export default function CustomerDetailPage() {
     const supabase = createBrowserClient();
     const fetchAll = async () => {
       setLoading(true);
-      const [custRes, srvRes, amcRes, invRes] = await Promise.all([
+      const [custRes, srvRes, invRes] = await Promise.all([
         supabase.from('customers').select('*').eq('id', id).single(),
         supabase.from('services').select('*').eq('customer_id', id).order('scheduled_date', { ascending: false }).limit(10),
-        supabase.from('amc_contracts').select('*').eq('customer_id', id).order('created_at', { ascending: false }),
         supabase.from('invoices').select('*, items:invoice_items(*)').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
       ]);
       if (custRes.data) setCustomer(custRes.data);
       if (srvRes.data) setServices(srvRes.data);
-      if (amcRes.data) setAmcContracts(amcRes.data);
       if (invRes.data) {
         setInvoices(invRes.data);
         // Collect all unique products/items from invoices
@@ -93,38 +90,6 @@ export default function CustomerDetailPage() {
           {customer.address_line2 && <p>{customer.address_line2}</p>}
           <p>{customer.city}, {customer.district}, {customer.state} - {customer.pincode}</p>
           {customer.location_landmark && <p className="text-muted-foreground mt-1">Landmark: {customer.location_landmark}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> AMC Contracts ({amcContracts.length})</CardTitle>
-          <Link href={`/dashboard/invoices/new?customer=${id}`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> New Invoice + AMC</Button></Link>
-        </CardHeader>
-        <CardContent>
-          {amcContracts.length === 0 ? <p className="text-sm text-muted-foreground">No AMC contracts</p> : (
-            <div className="space-y-3">
-              {amcContracts.map((amc: any) => (
-                <Link key={amc.id} href={`/dashboard/amc/${amc.id}`} className="block">
-                  <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent">
-                    <div>
-                      <p className="font-medium">{amc.contract_number}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Every {amc.service_interval_months} months | {formatCurrency(amc.amount)}
-                      </p>
-                      {amc.status === 'active' && amc.next_service_date && (
-                        <p className="text-sm font-medium text-blue-600">Next AMC: {formatDate(amc.next_service_date)}</p>
-                      )}
-                      {amc.status === 'active' && !amc.next_service_date && (
-                        <p className="text-sm font-medium text-yellow-600">AMC Pending</p>
-                      )}
-                    </div>
-                    <Badge className={getStatusColor(amc.status)}>{AMC_STATUS_LABELS[amc.status as keyof typeof AMC_STATUS_LABELS] || amc.status}</Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -192,7 +157,7 @@ export default function CustomerDetailPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{inv.invoice_number}</p>
-                        {inv.amc_enabled && <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">AMC</Badge>}
+  
                       </div>
                       <p className="text-sm text-muted-foreground">{formatDate(inv.invoice_date)} | {formatCurrency(inv.total_amount)} | {inv.items?.length || 0} items</p>
                     </div>

@@ -92,7 +92,7 @@ function NewServicePageContent() {
   };
 
   const serviceTypeOptions = [
-    { value: 'amc_service', label: 'AMC Service' },
+    { value: 'amc_service', label: 'Recurring Service' },
     { value: 'paid_service', label: 'Paid Service' },
     { value: 'installation', label: 'Installation' },
   ];

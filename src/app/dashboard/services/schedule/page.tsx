@@ -38,7 +38,7 @@ export default function SchedulePage() {
       const supabase = createBrowserClient();
       const { data, error } = await supabase.rpc('generate_all_upcoming_services');
       if (error) throw error;
-      toast.success(`Generated ${data || 0} new service schedules from AMC contracts`);
+      toast.success(`Generated ${data || 0} new service schedules`);
       fetchOverdue();
     } catch (error: any) {
       toast.error(error.message || 'Failed to generate schedule');
@@ -54,7 +54,7 @@ export default function SchedulePage() {
         <div><h1 className="text-2xl font-bold">Service Schedule</h1><p className="text-muted-foreground">Auto-generate and manage service schedules</p></div>
         <Button onClick={handleGenerateSchedule} disabled={generating}>
           {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarDays className="mr-2 h-4 w-4" />}
-          Generate AMC Schedule
+          Generate Service Schedule
         </Button>
       </div>
 

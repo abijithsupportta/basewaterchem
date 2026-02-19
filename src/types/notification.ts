@@ -23,12 +23,10 @@ export interface Notification {
 
 export interface DashboardStats {
   total_customers: number;
-  active_installations: number;
-  active_amc_contracts: number;
+  scheduled_services: number;
   todays_services: number;
   overdue_services: number;
   this_week_services: number;
-  open_complaints: number;
-  amc_expiring_soon: number;
   pending_payments: number;
+  revenue_this_month: number;
 }
