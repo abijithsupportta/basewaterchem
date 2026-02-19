@@ -6,10 +6,10 @@ import { Plus, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useServices } from '@/hooks/use-services';
 import { formatDate, getStatusColor, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
@@ -141,11 +141,11 @@ export default function ServicesPage() {
             </button>
           ))}
           {timeFilter === 'custom' && (
-            <div className="flex items-center gap-2">
-              <Input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="h-8 text-xs w-36" />
-              <span className="text-xs text-muted-foreground">to</span>
-              <Input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="h-8 text-xs w-36" />
-            </div>
+            <DateRangePicker
+              from={customFrom}
+              to={customTo}
+              onChange={(from, to) => { setCustomFrom(from); setCustomTo(to); }}
+            />
           )}
         </div>
       </div>
