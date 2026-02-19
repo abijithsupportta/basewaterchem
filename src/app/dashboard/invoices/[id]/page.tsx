@@ -46,7 +46,15 @@ export default function InvoiceDetailPage() {
   }, [id]);
 
   const handleRecordPayment = async () => {
-    if (paymentAmount <= 0) return;
+    const balanceDue = invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0));
+    if (paymentAmount <= 0) {
+      toast.error('Please enter a valid amount.');
+      return;
+    }
+    if (paymentAmount > balanceDue) {
+      toast.error(`Amount cannot exceed the due balance of ${formatCurrency(balanceDue)}`);
+      return;
+    }
     setRecording(true);
     try {
       const supabase = createBrowserClient();
@@ -63,6 +71,7 @@ export default function InvoiceDetailPage() {
       if (error) throw error;
       toast.success('Payment recorded!');
       setInvoice((inv: any) => ({ ...inv, amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus }));
+      setPaymentAmount(Math.max(0, newBalance));
       setShowPayment(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to record payment');
@@ -123,7 +132,7 @@ export default function InvoiceDetailPage() {
         </div>
         <div className="flex gap-2">
           {invoice.status !== 'paid' && (
-            <Button onClick={() => setShowPayment(true)}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
+            <Button onClick={() => { setPaymentAmount(invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0))); setShowPayment(true); }}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
           )}
           <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print</Button>
           <Button variant="destructive" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Delete</Button>
@@ -215,19 +224,40 @@ export default function InvoiceDetailPage() {
         </CardContent>
       </Card>
 
-      {showPayment && (
+      {showPayment && (() => {
+        const balanceDue = invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0));
+        return (
         <Card className="border-green-200 bg-green-50/50 max-w-md">
           <CardHeader><CardTitle className="text-base text-green-800">Record Payment</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2"><Label>Amount (₹)</Label><Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(Number(e.target.value))} max={invoice.balance_due} /></div>
+            <div className="rounded-md bg-white border p-3 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Total Amount</span><span className="font-medium">{formatCurrency(invoice.total_amount)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Already Paid</span><span className="font-medium text-green-600">{formatCurrency(invoice.amount_paid || 0)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-bold"><span className="text-red-600">Due Amount</span><span className="text-red-600">{formatCurrency(balanceDue)}</span></div>
+            </div>
+            <div className="space-y-2">
+              <Label>Amount (₹)</Label>
+              <Input
+                type="number"
+                value={paymentAmount}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setPaymentAmount(val > balanceDue ? balanceDue : val);
+                }}
+                min={0}
+                max={balanceDue}
+              />
+              {paymentAmount > balanceDue && <p className="text-xs text-red-500">Cannot exceed due amount of {formatCurrency(balanceDue)}</p>}
+            </div>
             <div className="space-y-2"><Label>Payment Method</Label><SimpleSelect options={paymentMethodOptions} value={paymentMethod} onChange={setPaymentMethod} /></div>
             <div className="flex gap-4">
-              <Button onClick={handleRecordPayment} disabled={recording || paymentAmount <= 0}>{recording && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record</Button>
+              <Button onClick={handleRecordPayment} disabled={recording || paymentAmount <= 0 || paymentAmount > balanceDue}>{recording && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record {formatCurrency(paymentAmount)}</Button>
               <Button variant="outline" onClick={() => setShowPayment(false)}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       {invoice.notes && <Card><CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap">{invoice.notes}</p></CardContent></Card>}
     </div>
