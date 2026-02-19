@@ -40,6 +40,7 @@ export interface Service {
   parts_used: PartUsed[];
   parts_cost: number;
   service_charge: number;
+  discount: number;
   total_amount: number;
   is_under_warranty: boolean;
   is_under_amc: boolean;

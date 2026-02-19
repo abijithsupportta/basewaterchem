@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,12 @@ import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
+interface CompletionItem {
+  part_name: string;
+  qty: number;
+  unit_price: number;
+}
+
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -24,7 +30,27 @@ export default function ServiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
-  const [completionData, setCompletionData] = useState({ work_done: '', actual_amount: 0, parts_used: '' });
+
+  // Completion form state
+  const [workDone, setWorkDone] = useState('');
+  const [items, setItems] = useState<CompletionItem[]>([]);
+  const [serviceCharge, setServiceCharge] = useState(0);
+  const [discount, setDiscount] = useState(0);
+
+  const partsCost = items.reduce((sum, item) => sum + item.qty * item.unit_price, 0);
+  const totalAmount = partsCost + serviceCharge - discount;
+
+  const addItem = useCallback(() => {
+    setItems((prev) => [...prev, { part_name: '', qty: 1, unit_price: 0 }]);
+  }, []);
+
+  const removeItem = useCallback((index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const updateItem = useCallback((index: number, field: keyof CompletionItem, value: string | number) => {
+    setItems((prev) => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -52,15 +78,23 @@ export default function ServiceDetailPage() {
     setCompleting(true);
     try {
       const supabase = createBrowserClient();
+      const partsUsed = items.filter((i) => i.part_name.trim()).map((i) => ({
+        part_name: i.part_name.trim(),
+        qty: i.qty,
+        cost: i.qty * i.unit_price,
+        unit_price: i.unit_price,
+      }));
+
       const updateData: any = {
         status: 'completed',
         completed_date: new Date().toISOString(),
-        work_done: completionData.work_done,
-        actual_amount: completionData.actual_amount || 0,
+        work_done: workDone,
+        parts_used: partsUsed,
+        parts_cost: partsCost,
+        service_charge: serviceCharge,
+        discount: discount,
+        total_amount: Math.max(totalAmount, 0),
       };
-      if (completionData.parts_used) {
-        updateData.parts_used = completionData.parts_used.split(',').map((p: string) => ({ name: p.trim() }));
-      }
       const { error } = await supabase.from('services').update(updateData).eq('id', id);
       if (error) throw error;
 
@@ -186,13 +220,39 @@ export default function ServiceDetailPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Billing</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div><p className="text-sm text-muted-foreground">Estimated</p><p className="text-lg font-bold">{formatCurrency(service.estimated_amount || 0)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Actual</p><p className="text-lg font-bold">{formatCurrency(service.actual_amount || 0)}</p></div>
-            <div><p className="text-sm text-muted-foreground">Payment</p><Badge className={getStatusColor(service.payment_status)}>{PAYMENT_STATUS_LABELS[service.payment_status as keyof typeof PAYMENT_STATUS_LABELS] || service.payment_status}</Badge></div>
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+            <div><p className="text-sm text-muted-foreground">Parts Cost</p><p className="text-lg font-bold">{formatCurrency(service.parts_cost || 0)}</p></div>
+            <div><p className="text-sm text-muted-foreground">Service Charge</p><p className="text-lg font-bold">{formatCurrency(service.service_charge || 0)}</p></div>
+            <div><p className="text-sm text-muted-foreground">Discount</p><p className="text-lg font-bold text-red-600">-{formatCurrency(service.discount || 0)}</p></div>
+            <div><p className="text-sm text-muted-foreground">Total</p><p className="text-lg font-bold">{formatCurrency(service.total_amount || 0)}</p></div>
+          </div>
+          <div className="mt-3">
+            <Badge className={getStatusColor(service.payment_status)}>{PAYMENT_STATUS_LABELS[service.payment_status as keyof typeof PAYMENT_STATUS_LABELS] || service.payment_status}</Badge>
           </div>
         </CardContent>
       </Card>
+
+      {/* Parts Used */}
+      {service.parts_used && Array.isArray(service.parts_used) && service.parts_used.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Items / Parts Used</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-sm">
+              <thead><tr className="border-b text-left"><th className="pb-2">Item</th><th className="pb-2 text-center">Qty</th><th className="pb-2 text-right">Unit Price</th><th className="pb-2 text-right">Amount</th></tr></thead>
+              <tbody>
+                {service.parts_used.map((p: any, i: number) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="py-2">{p.part_name || p.name}</td>
+                    <td className="py-2 text-center">{p.qty || 1}</td>
+                    <td className="py-2 text-right">{formatCurrency(p.unit_price || p.cost || 0)}</td>
+                    <td className="py-2 text-right">{formatCurrency((p.qty || 1) * (p.unit_price || p.cost || 0))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Description & Notes */}
       {(service.description || service.work_done || service.notes) && (
@@ -210,21 +270,78 @@ export default function ServiceDetailPage() {
       {showCompleteForm && (
         <Card className="border-green-200 bg-green-50/50">
           <CardHeader><CardTitle className="text-base text-green-800">Complete Service</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
+            {/* Work Done */}
             <div className="space-y-2">
               <Label>Work Done *</Label>
-              <Textarea value={completionData.work_done} onChange={(e) => setCompletionData((d) => ({ ...d, work_done: e.target.value }))} placeholder="Describe work performed..." />
+              <Textarea value={workDone} onChange={(e) => setWorkDone(e.target.value)} placeholder="Describe work performed..." rows={3} />
             </div>
-            <div className="space-y-2">
-              <Label>Actual Amount (₹)</Label>
-              <Input type="number" value={completionData.actual_amount} onChange={(e) => setCompletionData((d) => ({ ...d, actual_amount: Number(e.target.value) }))} />
+
+            {/* Items / Parts Used */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Items / Parts Used</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                  <Plus className="mr-1 h-3 w-3" /> Add Item
+                </Button>
+              </div>
+              {items.length > 0 && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[1fr_80px_100px_40px] gap-2 text-xs font-medium text-muted-foreground">
+                    <span>Item Name</span><span className="text-center">Qty</span><span className="text-right">Unit Price (₹)</span><span />
+                  </div>
+                  {items.map((item, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
+                      <Input
+                        placeholder="Part / Item name"
+                        value={item.part_name}
+                        onChange={(e) => updateItem(index, 'part_name', e.target.value)}
+                      />
+                      <Input
+                        type="number"
+                        min={1}
+                        value={item.qty}
+                        onChange={(e) => updateItem(index, 'qty', Number(e.target.value))}
+                        className="text-center"
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={item.unit_price}
+                        onChange={(e) => updateItem(index, 'unit_price', Number(e.target.value))}
+                        className="text-right"
+                      />
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)} className="h-8 w-8 text-red-500 hover:text-red-700">
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label>Parts Used (comma-separated)</Label>
-              <Input value={completionData.parts_used} onChange={(e) => setCompletionData((d) => ({ ...d, parts_used: e.target.value }))} placeholder="Filter, Membrane, ..." />
+
+            {/* Charges */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Service Charge (₹)</Label>
+                <Input type="number" min={0} value={serviceCharge} onChange={(e) => setServiceCharge(Number(e.target.value))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Discount (₹)</Label>
+                <Input type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+              </div>
             </div>
+
+            {/* Totals Summary */}
+            <div className="rounded-md border bg-white p-4 space-y-1 text-sm">
+              {items.length > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Parts / Items Cost</span><span>{formatCurrency(partsCost)}</span></div>}
+              {serviceCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Service Charge</span><span>{formatCurrency(serviceCharge)}</span></div>}
+              {discount > 0 && <div className="flex justify-between text-red-600"><span>Discount</span><span>-{formatCurrency(discount)}</span></div>}
+              <div className="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total</span><span>{formatCurrency(Math.max(totalAmount, 0))}</span></div>
+            </div>
+
             <div className="flex gap-4">
-              <Button onClick={handleCompleteService} disabled={completing || !completionData.work_done}>{completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Mark Complete</Button>
+              <Button onClick={handleCompleteService} disabled={completing || !workDone.trim()}>{completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Mark Complete</Button>
               <Button variant="outline" onClick={() => setShowCompleteForm(false)}>Cancel</Button>
             </div>
           </CardContent>
