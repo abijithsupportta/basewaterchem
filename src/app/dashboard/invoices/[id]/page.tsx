@@ -15,6 +15,7 @@ import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function InvoiceDetailPage() {
@@ -180,40 +181,45 @@ export default function InvoiceDetailPage() {
         </CardContent>
       </Card>
 
-      {showPayment && (() => {
-        const balanceDue = invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0));
-        return (
-        <Card className="border-green-200 bg-green-50/50 max-w-md">
-          <CardHeader><CardTitle className="text-base text-green-800">Record Payment</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-md bg-white border p-3 space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Total Amount</span><span className="font-medium">{formatCurrency(invoice.total_amount)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Already Paid</span><span className="font-medium text-green-600">{formatCurrency(invoice.amount_paid || 0)}</span></div>
-              <div className="flex justify-between border-t pt-1 font-bold"><span className="text-red-600">Due Amount</span><span className="text-red-600">{formatCurrency(balanceDue)}</span></div>
-            </div>
-            <div className="space-y-2">
-              <Label>Amount (₹)</Label>
-              <Input
-                type="number"
-                value={paymentAmount}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setPaymentAmount(val > balanceDue ? balanceDue : val);
-                }}
-                min={0}
-                max={balanceDue}
-              />
-              {paymentAmount > balanceDue && <p className="text-xs text-red-500">Cannot exceed due amount of {formatCurrency(balanceDue)}</p>}
-            </div>
-            <div className="space-y-2"><Label>Payment Method</Label><SimpleSelect options={paymentMethodOptions} value={paymentMethod} onChange={setPaymentMethod} /></div>
-            <div className="flex gap-4">
-              <Button onClick={handleRecordPayment} disabled={recording || paymentAmount <= 0 || paymentAmount > balanceDue}>{recording && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record {formatCurrency(paymentAmount)}</Button>
-              <Button variant="outline" onClick={() => setShowPayment(false)}>Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
-        );
-      })()}
+      <Dialog open={showPayment} onOpenChange={setShowPayment}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-green-800">Record Payment</DialogTitle>
+            <DialogDescription>Record a payment for invoice {invoice.invoice_number}</DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const balanceDue = invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0));
+            return (
+              <div className="space-y-4">
+                <div className="rounded-md border p-3 space-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Total Amount</span><span className="font-medium">{formatCurrency(invoice.total_amount)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Already Paid</span><span className="font-medium text-green-600">{formatCurrency(invoice.amount_paid || 0)}</span></div>
+                  <div className="flex justify-between border-t pt-1 font-bold"><span className="text-red-600">Due Amount</span><span className="text-red-600">{formatCurrency(balanceDue)}</span></div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Amount (₹)</Label>
+                  <Input
+                    type="number"
+                    value={paymentAmount}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setPaymentAmount(val > balanceDue ? balanceDue : val);
+                    }}
+                    min={0}
+                    max={balanceDue}
+                  />
+                  {paymentAmount > balanceDue && <p className="text-xs text-red-500">Cannot exceed due amount of {formatCurrency(balanceDue)}</p>}
+                </div>
+                <div className="space-y-2"><Label>Payment Method</Label><SimpleSelect options={paymentMethodOptions} value={paymentMethod} onChange={setPaymentMethod} /></div>
+                <div className="flex gap-3 pt-2">
+                  <Button className="flex-1" onClick={handleRecordPayment} disabled={recording || paymentAmount <= 0 || paymentAmount > balanceDue}>{recording && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record {formatCurrency(paymentAmount)}</Button>
+                  <Button variant="outline" onClick={() => setShowPayment(false)}>Cancel</Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {invoice.notes && <Card><CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader><CardContent><p className="text-sm whitespace-pre-wrap">{invoice.notes}</p></CardContent></Card>}
     </div>
