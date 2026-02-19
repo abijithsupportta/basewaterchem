@@ -12,6 +12,7 @@ export const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrator',
   manager: 'Manager',
   staff: 'Staff',
+  technician: 'Technician',
 };
 
 export const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -58,6 +59,7 @@ export const NAV_ITEMS = [
   { label: 'Services', href: '/dashboard/services', icon: 'Wrench' },
   { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays' },
   { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt' },
+  { label: 'Staff', href: '/dashboard/staff', icon: 'Users' },
   { label: 'Settings', href: '/dashboard/settings', icon: 'Settings' },
 ];
 

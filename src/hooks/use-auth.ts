@@ -42,5 +42,8 @@ export function useAuth() {
     if (error) throw error;
   };
 
-  return { user, loading, signIn, signOut, isAdmin: true };
+  const role = user?.user_metadata?.role as string | undefined;
+  const isAdmin = role === 'admin';
+
+  return { user, loading, signIn, signOut, isAdmin };
 }

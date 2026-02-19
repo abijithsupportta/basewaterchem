@@ -6,11 +6,15 @@ export function canDelete(role: StaffRole) {
 }
 
 export function canManageStaff(role: StaffRole) {
-  return role === 'admin' || role === 'manager';
+  return role === 'admin';
 }
 
 export function canCreateOrEdit(role: StaffRole) {
   return role === 'admin' || role === 'manager' || role === 'staff';
+}
+
+export function canManageCustomers(role: StaffRole) {
+  return role === 'admin' || role === 'manager';
 }
 
 export function canAssignTechnician(role: StaffRole) {

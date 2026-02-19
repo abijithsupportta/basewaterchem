@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { NAV_ITEMS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { useUserRole } from '@/lib/use-user-role';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
   LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays, Settings,
@@ -19,7 +20,26 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const userRole = useUserRole();
   const [collapsed, setCollapsed] = useState(false);
+
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (userRole === 'admin') return true;
+    if (userRole === 'manager') return item.href !== '/dashboard/staff';
+    if (userRole === 'staff') {
+      return [
+        '/dashboard',
+        '/dashboard/services',
+        '/dashboard/services/calendar',
+        '/dashboard/invoices',
+      ].includes(item.href);
+    }
+    return [
+      '/dashboard',
+      '/dashboard/services',
+      '/dashboard/services/calendar',
+    ].includes(item.href);
+  });
 
   return (
     <div
@@ -44,7 +64,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-2">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = iconMap[item.icon] || LayoutDashboard;
             const isActive =
               item.href === '/dashboard'
@@ -89,7 +109,7 @@ export function Sidebar() {
             {!collapsed && (
               <div className="px-3 py-2">
                 <p className="text-sm font-medium truncate">{user.email}</p>
-                <p className="text-xs text-muted-foreground capitalize">Admin</p>
+                <p className="text-xs text-muted-foreground capitalize">{userRole}</p>
               </div>
             )}
             <Button

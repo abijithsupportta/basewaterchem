@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Loader2, IndianRupee, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, Printer, Loader2, IndianRupee, Download } from 'lucide-react';
 import { downloadInvoicePDF, printInvoicePDF } from '@/lib/invoice-pdf';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,6 @@ export default function InvoiceDetailPage() {
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [recording, setRecording] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [companySettings, setCompanySettings] = useState<any>(null);
 
   useEffect(() => {
@@ -102,25 +101,6 @@ export default function InvoiceDetailPage() {
     );
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Are you sure you want to permanently delete this invoice? All related services and recurring contracts will also be deleted. This action cannot be undone.')) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const err = await res.json();
-        const msg = typeof err.error === 'string' ? err.error : err.error?.message || 'Failed to delete invoice';
-        throw new Error(msg);
-      }
-      toast.success('Invoice deleted permanently');
-      router.push('/dashboard/invoices');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete invoice');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   if (loading) return <Loading />;
   if (!invoice) {
     return (
@@ -158,7 +138,6 @@ export default function InvoiceDetailPage() {
           )}
           <Button variant="outline" onClick={handleDownloadPDF}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
           <Button variant="outline" onClick={handlePrintInvoice}><Printer className="mr-2 h-4 w-4" /> Print</Button>
-          <Button variant="destructive" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Delete</Button>
         </div>
       </div>
 

@@ -20,7 +20,6 @@ import { TIME_SLOTS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
 import type { ServiceFormData } from '@/types';
-import { useUserRole } from '@/lib/use-user-role';
 
 export default function NewServicePage() {
   return (
@@ -115,9 +114,6 @@ function NewServicePageContent() {
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));
   const timeOptions = TIME_SLOTS.map((t) => ({ value: t, label: t }));
-
-  const userRole = useUserRole();
-  const createdByStaffId = 'current-staff-id'; // TODO: Replace with real user id
 
   return (
     <div className="space-y-6">

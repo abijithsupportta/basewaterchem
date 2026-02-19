@@ -3,10 +3,17 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { canDelete, canManageStaff, type StaffRole } from '@/lib/authz';
 import { apiSuccess, apiError } from '@/core/api';
 
+const ALLOWED_STAFF_ROLES: StaffRole[] = ['admin', 'manager', 'staff', 'technician'];
+
 async function getCurrentUserRole() {
   const supabase = await createServerSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData.user) return { supabase, role: null as StaffRole | null };
+
+  const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
+  if (metadataRole) {
+    return { supabase, role: metadataRole };
+  }
 
   const { data: staff, error: staffError } = await supabase
     .from('staff')
@@ -23,7 +30,7 @@ export async function GET() {
     const { supabase, role } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin/manager can view staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can view staff.' } },
         { status: 403 }
       );
     }
@@ -45,17 +52,25 @@ export async function POST(request: NextRequest) {
     const { supabase, role } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin/manager can add staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can add staff.' } },
         { status: 403 }
       );
     }
 
     const body = await request.json();
+    const requestedRole = (body.role as StaffRole | undefined) ?? 'staff';
+    if (!ALLOWED_STAFF_ROLES.includes(requestedRole)) {
+      return Response.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid staff role.' } },
+        { status: 400 }
+      );
+    }
+
     const payload = {
       full_name: body.full_name ?? body.name,
       email: body.email,
       phone: body.phone ?? null,
-      role: body.role ?? 'staff',
+      role: requestedRole,
       is_active: body.is_active ?? true,
     };
 

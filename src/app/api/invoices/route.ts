@@ -1,10 +1,10 @@
-﻿import { NextRequest } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
 import { invoiceSchema } from '@/lib/validators';
 import { apiSuccess, apiError } from '@/core/api';
-import { canCreateOrEdit } from '@/lib/authz';
+import { canCreateOrEdit, type StaffRole } from '@/lib/authz';
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
+    const user = (await supabase.auth.getUser()).data.user;
+    const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
+    if (!canCreateOrEdit(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create invoices.' }, { status: 403 });
+    }
+
     const repo = new InvoiceRepository(supabase);
     const body = await request.json();
     const validated = invoiceSchema.parse(body);

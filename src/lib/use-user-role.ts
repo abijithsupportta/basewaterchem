@@ -1,11 +1,41 @@
 import { useEffect, useState } from 'react';
+import { createBrowserClient } from '@/lib/supabase/client';
+import type { StaffRole } from '@/lib/authz';
 
-export function useUserRole(): 'admin' | 'manager' | 'staff' | 'technician' {
-  // TODO: Replace with real session/user context
-  const [role, setRole] = useState<'admin' | 'manager' | 'staff' | 'technician'>('admin');
+export function useUserRole(): StaffRole {
+  const [role, setRole] = useState<StaffRole>('staff');
+
   useEffect(() => {
-    // Fetch from session or API
-    // setRole(...)
+    let cancelled = false;
+
+    const loadRole = async () => {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user || cancelled) return;
+
+      const metadataRole = data.user.user_metadata?.role as StaffRole | undefined;
+      if (metadataRole) {
+        setRole(metadataRole);
+        return;
+      }
+
+      const { data: staff } = await supabase
+        .from('staff')
+        .select('role')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle();
+
+      if (!cancelled && staff?.role) {
+        setRole(staff.role as StaffRole);
+      }
+    };
+
+    loadRole();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
   return role;
 }
