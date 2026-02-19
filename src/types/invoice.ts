@@ -33,7 +33,7 @@ export interface Invoice {
   service_id: string | null;
   quotation_id: string | null;
   invoice_date: string;
-  due_date: string | null;
+
   status: InvoiceStatus;
   subtotal: number;
   tax_percent: number;
@@ -58,7 +58,7 @@ export interface InvoiceFormData {
   service_id?: string;
   quotation_id?: string;
   invoice_date?: string;
-  due_date?: string;
+
   tax_percent?: number;
   discount_amount?: number;
   notes?: string;

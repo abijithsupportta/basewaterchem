@@ -57,7 +57,6 @@ export const invoiceSchema = z.object({
   customer_id: z.string().uuid('Select a customer'),
   service_id: z.string().uuid().optional(),
   invoice_date: z.string().optional(),
-  due_date: z.string().optional(),
   tax_percent: z.coerce.number().min(0).optional(),
   discount_amount: z.coerce.number().min(0).optional(),
   notes: z.string().optional(),

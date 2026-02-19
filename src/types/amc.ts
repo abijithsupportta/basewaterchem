@@ -14,6 +14,7 @@ export interface AmcContract {
   amount: number;
   is_paid: boolean;
   status: AmcStatus;
+  next_service_date: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;

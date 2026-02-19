@@ -63,7 +63,48 @@ export default function ServiceDetailPage() {
       }
       const { error } = await supabase.from('services').update(updateData).eq('id', id);
       if (error) throw error;
-      toast.success('Service completed!');
+
+      // If this is an AMC service, schedule the next one automatically
+      if (service.service_type === 'amc_service' && service.amc_contract_id) {
+        const { data: amcData } = await supabase.from('amc_contracts')
+          .select('*')
+          .eq('id', service.amc_contract_id)
+          .single();
+
+        if (amcData && amcData.status === 'active') {
+          const completedDate = new Date();
+          const nextDate = new Date(completedDate);
+          nextDate.setMonth(nextDate.getMonth() + (amcData.service_interval_months || 3));
+          const nextDateStr = nextDate.toISOString().split('T')[0];
+
+          // Update AMC contract: increment services_completed, set next_service_date, extend end_date
+          await supabase.from('amc_contracts').update({
+            services_completed: (amcData.services_completed || 0) + 1,
+            total_services_included: (amcData.total_services_included || 0) + 1,
+            next_service_date: nextDateStr,
+            end_date: nextDateStr,
+          }).eq('id', service.amc_contract_id);
+
+          // Create the next scheduled AMC service
+          await supabase.from('services').insert({
+            customer_id: service.customer_id,
+            amc_contract_id: service.amc_contract_id,
+            service_type: 'amc_service',
+            status: 'scheduled',
+            scheduled_date: nextDateStr,
+            description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
+            is_under_amc: true,
+            payment_status: 'not_applicable',
+          });
+
+          toast.success(`Service completed! Next AMC scheduled for ${nextDateStr}`);
+        } else {
+          toast.success('Service completed!');
+        }
+      } else {
+        toast.success('Service completed!');
+      }
+
       setService((s: any) => ({ ...s, ...updateData }));
       setShowCompleteForm(false);
     } catch (error: any) {

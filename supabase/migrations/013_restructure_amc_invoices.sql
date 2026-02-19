@@ -29,6 +29,9 @@ ALTER TABLE amc_contracts ALTER COLUMN customer_product_id DROP NOT NULL;
 -- Create index for invoice-based AMC lookups
 CREATE INDEX IF NOT EXISTS idx_amc_invoice ON amc_contracts(invoice_id);
 
+-- Add next_service_date to amc_contracts for tracking upcoming AMC service
+ALTER TABLE amc_contracts ADD COLUMN IF NOT EXISTS next_service_date DATE;
+
 -- ============================================
 -- Dashboard stats view (replaces missing view)
 -- ============================================

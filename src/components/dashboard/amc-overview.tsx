@@ -55,7 +55,6 @@ export function AmcOverview() {
         ) : (
           <div className="space-y-3">
             {contracts.map((contract) => {
-              const daysLeft = Math.ceil((new Date(contract.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
               return (
                 <Link
                   key={contract.id}
@@ -66,19 +65,25 @@ export function AmcOverview() {
                     <div className="space-y-1">
                       <p className="font-medium text-sm">{contract.customer?.full_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {contract.contract_number} &bull; Expires {formatDate(contract.end_date)}
+                        {contract.contract_number} &bull; Every {contract.service_interval_months} months
                       </p>
+                      {contract.next_service_date && (
+                        <p className="text-xs font-medium text-blue-600">Next AMC: {formatDate(contract.next_service_date)}</p>
+                      )}
+                      {!contract.next_service_date && contract.status === 'active' && (
+                        <p className="text-xs font-medium text-yellow-600">AMC Pending</p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge className={getStatusColor(contract.status)} variant="outline">
                         {AMC_STATUS_LABELS[contract.status as keyof typeof AMC_STATUS_LABELS] || contract.status}
                       </Badge>
-                      {daysLeft <= 30 && daysLeft > 0 && (
-                        <span className="text-xs text-amber-600 font-medium">{daysLeft}d left</span>
-                      )}
-                      {daysLeft <= 0 && (
-                        <span className="text-xs text-red-600 font-medium">Expired</span>
-                      )}
+                      {contract.next_service_date && (() => {
+                        const daysToNext = Math.ceil((new Date(contract.next_service_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                        if (daysToNext <= 7 && daysToNext > 0) return <span className="text-xs text-amber-600 font-medium">In {daysToNext}d</span>;
+                        if (daysToNext <= 0) return <span className="text-xs text-red-600 font-medium">Overdue</span>;
+                        return null;
+                      })()}
                     </div>
                   </div>
                 </Link>

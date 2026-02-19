@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +21,7 @@ export default function AMCDetailPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [renewing, setRenewing] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -50,7 +51,9 @@ export default function AMCDetailPage() {
         end_date: newEnd.toISOString().split('T')[0],
         service_interval_months: contract.service_interval_months,
         total_services_included: 1,
+        services_completed: 0,
         amount: contract.amount,
+        next_service_date: newEnd.toISOString().split('T')[0],
       }).select().single();
       if (error) throw error;
 
@@ -75,6 +78,33 @@ export default function AMCDetailPage() {
     }
   };
 
+  const handleEndAmc = async () => {
+    if (!confirm('Are you sure you want to end this AMC contract? Pending services will be cancelled.')) return;
+    setEnding(true);
+    try {
+      const supabase = createBrowserClient();
+      // Cancel the contract
+      const { error } = await supabase.from('amc_contracts').update({
+        status: 'cancelled',
+        next_service_date: null,
+      }).eq('id', id);
+      if (error) throw error;
+
+      // Cancel any pending/scheduled services under this contract
+      await supabase.from('services').update({ status: 'cancelled' })
+        .eq('amc_contract_id', id)
+        .in('status', ['scheduled', 'assigned', 'in_progress']);
+
+      toast.success('AMC contract ended. Pending services cancelled.');
+      setContract((c: any) => ({ ...c, status: 'cancelled', next_service_date: null }));
+      setServices((svcs) => svcs.map((s) => ['scheduled', 'assigned', 'in_progress'].includes(s.status) ? { ...s, status: 'cancelled' } : s));
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to end AMC');
+    } finally {
+      setEnding(false);
+    }
+  };
+
   if (loading) return <Loading />;
   if (!contract) {
     return (
@@ -88,6 +118,8 @@ export default function AMCDetailPage() {
   const customer = contract.customer as any;
   const invoice = contract.invoice as any;
   const isExpired = contract.status === 'expired' || new Date(contract.end_date) < new Date();
+  const isActive = contract.status === 'active';
+  const pendingService = services.find((s) => s.status !== 'completed' && s.status !== 'cancelled');
 
   return (
     <div className="space-y-6">
@@ -100,13 +132,23 @@ export default function AMCDetailPage() {
             <p className="text-muted-foreground">AMC Contract</p>
           </div>
           <Badge className={getStatusColor(contract.status)}>{AMC_STATUS_LABELS[contract.status as keyof typeof AMC_STATUS_LABELS]}</Badge>
+          {isActive && pendingService && <Badge className="bg-yellow-100 text-yellow-800">AMC Pending</Badge>}
+          {isActive && contract.next_service_date && !pendingService && <Badge className="bg-green-100 text-green-800">Next: {formatDate(contract.next_service_date)}</Badge>}
         </div>
-        {isExpired && (
-          <Button onClick={handleRenew} disabled={renewing}>
-            {renewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Renew Contract
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {isActive && (
+            <Button variant="destructive" onClick={handleEndAmc} disabled={ending}>
+              {ending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+              End AMC
+            </Button>
+          )}
+          {isExpired && (
+            <Button onClick={handleRenew} disabled={renewing}>
+              {renewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Renew Contract
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -133,11 +175,12 @@ export default function AMCDetailPage() {
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Period</p><p className="font-bold">{formatDate(contract.start_date)} → {formatDate(contract.end_date)}</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Service Interval</p><p className="text-2xl font-bold">{contract.service_interval_months} months</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Services</p><p className="text-2xl font-bold">{contract.services_completed}/{contract.total_services_included}</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Amount</p><p className="text-2xl font-bold">{formatCurrency(contract.amount)}</p></CardContent></Card>
+        <Card className={contract.next_service_date ? 'border-blue-200' : ''}><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Next AMC Service</p><p className="text-lg font-bold">{contract.next_service_date ? formatDate(contract.next_service_date) : contract.status === 'cancelled' ? 'Ended' : 'N/A'}</p></CardContent></Card>
       </div>
 
       <Card>

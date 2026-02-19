@@ -63,11 +63,16 @@ export default function AMCPage() {
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       {formatDate(contract.start_date)} → {formatDate(contract.end_date)} |
-                      Services: {contract.services_completed}/{contract.total_services_included} |
                       Every {contract.service_interval_months} months |
                       {formatCurrency(contract.amount)}
                       {contract.invoice?.invoice_number && ` | Invoice: ${contract.invoice.invoice_number}`}
                     </p>
+                    {contract.status === 'active' && contract.next_service_date && (
+                      <p className="text-sm font-medium text-blue-600 mt-1">Next AMC: {formatDate(contract.next_service_date)}</p>
+                    )}
+                    {contract.status === 'active' && !contract.next_service_date && (
+                      <p className="text-sm font-medium text-yellow-600 mt-1">AMC Pending</p>
+                    )}
                   </div>
                   <Badge className={getStatusColor(contract.status)}>{AMC_STATUS_LABELS[contract.status as keyof typeof AMC_STATUS_LABELS] || contract.status}</Badge>
                 </CardContent>

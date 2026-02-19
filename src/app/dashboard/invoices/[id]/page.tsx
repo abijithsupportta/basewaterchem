@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Loader2, IndianRupee, FileCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, Loader2, IndianRupee, FileCheck, Trash2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -148,15 +148,28 @@ export default function InvoiceDetailPage() {
             <div className="flex justify-between"><span className="text-muted-foreground">Total:</span><span className="font-bold">{formatCurrency(invoice.total_amount)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Paid:</span><span className="font-medium text-green-600">{formatCurrency(invoice.amount_paid)}</span></div>
             <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Balance Due:</span><span className="font-bold text-red-600">{formatCurrency(invoice.balance_due)}</span></div>
-            {invoice.due_date && <p className="text-sm text-muted-foreground">Due: {formatDate(invoice.due_date)}</p>}
           </CardContent>
         </Card>
       </div>
 
       {/* AMC Contract Info */}
-      {amcContract && (
+      {amcContract && (() => {
+        const pendingService = amcContract.services?.find((s: any) => s.status !== 'completed' && s.status !== 'cancelled');
+        const lastCompleted = amcContract.services?.filter((s: any) => s.status === 'completed').sort((a: any, b: any) => new Date(b.completed_date).getTime() - new Date(a.completed_date).getTime())[0];
+        const isAmcActive = amcContract.status === 'active';
+        const nextDate = amcContract.next_service_date;
+        return (
         <Card className="border-blue-200">
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><FileCheck className="h-4 w-4 text-blue-600" /> AMC Contract</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2"><FileCheck className="h-4 w-4 text-blue-600" /> AMC Contract</CardTitle>
+              <div className="flex items-center gap-2">
+                {isAmcActive && pendingService && <Badge className="bg-yellow-100 text-yellow-800">AMC Pending</Badge>}
+                {isAmcActive && !pendingService && nextDate && <Badge className="bg-green-100 text-green-800">Next AMC: {formatDate(nextDate)}</Badge>}
+                {amcContract.status === 'cancelled' && <Badge className="bg-red-100 text-red-800">AMC Ended</Badge>}
+              </div>
+            </div>
+          </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div><p className="text-sm text-muted-foreground">Contract #</p><p className="font-medium">{amcContract.contract_number}</p></div>
@@ -166,17 +179,19 @@ export default function InvoiceDetailPage() {
             </div>
             {amcContract.services?.length > 0 && (
               <div className="mt-4 border-t pt-4">
-                <p className="text-sm font-medium mb-2">Scheduled Services:</p>
+                <p className="text-sm font-medium mb-2">Services:</p>
                 {amcContract.services.map((srv: any) => (
                   <Link key={srv.id} href={`/dashboard/services/${srv.id}`} className="block text-sm text-blue-600 hover:underline">
                     {srv.service_number} - {formatDate(srv.scheduled_date)} ({srv.status})
+                    {srv.status === 'completed' && srv.completed_date && ` ✓ ${formatDate(srv.completed_date)}`}
                   </Link>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
-      )}
+        );
+      })()}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Items</CardTitle></CardHeader>

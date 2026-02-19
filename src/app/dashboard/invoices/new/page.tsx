@@ -31,7 +31,6 @@ export default function NewInvoicePage() {
     defaultValues: {
       customer_id: '',
       invoice_date: new Date().toISOString().split('T')[0],
-      due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
       tax_percent: DEFAULT_TAX_PERCENT,
       discount_amount: 0,
       notes: '',
@@ -82,34 +81,35 @@ export default function NewInvoicePage() {
         await supabase.from('invoice_items').insert(itemsToInsert);
       }
 
-      // If AMC enabled, create AMC contract and schedule service
+      // If AMC enabled, create AMC contract and schedule first service
       if (amc_enabled && amc_period_months) {
         const invoiceDate = new Date(invoiceData.invoice_date || new Date());
-        const amcEndDate = new Date(invoiceDate);
-        amcEndDate.setMonth(amcEndDate.getMonth() + amc_period_months);
+        const firstServiceDate = new Date(invoiceDate);
+        firstServiceDate.setMonth(firstServiceDate.getMonth() + amc_period_months);
 
-        // Create AMC contract
+        // Create AMC contract with next_service_date
         const { data: amcContract, error: amcError } = await supabase.from('amc_contracts').insert({
           customer_id: invoiceData.customer_id,
           invoice_id: invoice.id,
           start_date: invoiceDate.toISOString().split('T')[0],
-          end_date: amcEndDate.toISOString().split('T')[0],
+          end_date: firstServiceDate.toISOString().split('T')[0],
           service_interval_months: amc_period_months,
           total_services_included: 1,
+          services_completed: 0,
           amount: total,
           is_paid: false,
           status: 'active',
+          next_service_date: firstServiceDate.toISOString().split('T')[0],
         }).select().single();
         if (amcError) throw amcError;
 
-        // Create scheduled AMC service
-        const serviceDate = new Date(amcEndDate);
+        // Create scheduled AMC service at first service date
         const { error: srvError } = await supabase.from('services').insert({
           customer_id: invoiceData.customer_id,
           amc_contract_id: amcContract.id,
           service_type: 'amc_service',
           status: 'scheduled',
-          scheduled_date: serviceDate.toISOString().split('T')[0],
+          scheduled_date: firstServiceDate.toISOString().split('T')[0],
           description: `AMC service - Invoice ${invoice.invoice_number || 'N/A'}`,
           is_under_amc: true,
           payment_status: 'not_applicable',
@@ -142,7 +142,6 @@ export default function NewInvoicePage() {
                 {errors.customer_id && <p className="text-sm text-destructive">{errors.customer_id.message}</p>}
               </div>
               <div className="space-y-2"><Label>Invoice Date</Label><Input type="date" {...register('invoice_date')} /></div>
-              <div className="space-y-2"><Label>Due Date</Label><Input type="date" {...register('due_date')} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea {...register('notes')} placeholder="Payment terms, notes..." /></div>
           </CardContent>
@@ -170,7 +169,7 @@ export default function NewInvoicePage() {
                 />
               </div>
               <p className="text-sm text-muted-foreground">
-                An AMC contract will be created and a service will be scheduled after the selected period from the invoice date.
+                An AMC contract will be created. The first AMC service will be scheduled {watch('amc_period_months') || 3} months from the invoice date. After each service is completed, the next one is automatically scheduled.
               </p>
             </CardContent>
           )}
