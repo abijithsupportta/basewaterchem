@@ -115,21 +115,12 @@ export default function ServiceDetailPage() {
             .neq('id', id);
 
           if (!existingServices || existingServices.length === 0) {
-            // Calculate next service date from the ORIGINAL scheduled date, not today
+            // Next service = completion date (today) + cycle period
             const intervalMonths = amcData.service_interval_months || 3;
-            const baseDate = new Date(service.scheduled_date);
-            const nextDate = new Date(baseDate);
+            const completedDate = new Date();
+            completedDate.setHours(0, 0, 0, 0);
+            const nextDate = new Date(completedDate);
             nextDate.setMonth(nextDate.getMonth() + intervalMonths);
-
-            // Safety: if calculated date is today or in the past, push to tomorrow
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (nextDate <= today) {
-              const tomorrow = new Date(today);
-              tomorrow.setDate(tomorrow.getDate() + 1);
-              nextDate.setTime(tomorrow.getTime());
-            }
-
             const nextDateStr = nextDate.toISOString().split('T')[0];
 
             // Update AMC contract: increment services_completed, set next_service_date, extend end_date
