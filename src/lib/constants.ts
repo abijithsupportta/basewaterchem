@@ -27,6 +27,7 @@ export const SERVICE_STATUS_LABELS: Record<string, string> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
   rescheduled: 'Rescheduled',
+  overdue: 'Overdue',
 };
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {

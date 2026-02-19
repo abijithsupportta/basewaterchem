@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor, formatPhone } from '@/lib/utils';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, formatPhone } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -134,7 +134,7 @@ export default function CustomerDetailPage() {
                 <Link key={srv.id} href={`/dashboard/services/${srv.id}`} className="block">
                   <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent">
                     <div><p className="font-medium">{srv.service_number}</p><p className="text-sm text-muted-foreground">{SERVICE_TYPE_LABELS[srv.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {formatDate(srv.scheduled_date)}</p></div>
-                    <Badge className={getStatusColor(srv.status)}>{SERVICE_STATUS_LABELS[srv.status as keyof typeof SERVICE_STATUS_LABELS] || srv.status}</Badge>
+                    <Badge className={getStatusColor(getEffectiveServiceStatus(srv.status, srv.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(srv.status, srv.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || srv.status}</Badge>
                   </div>
                 </Link>
               ))}

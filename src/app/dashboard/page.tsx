@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loading } from '@/components/ui/loading';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDate, formatCurrency, getStatusColor, cn } from '@/lib/utils';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -248,8 +248,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className={getStatusColor(service.status)}>
-                          {SERVICE_STATUS_LABELS[service.status as keyof typeof SERVICE_STATUS_LABELS] || service.status}
+                        <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>
+                          {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || service.status}
                         </Badge>
                         <span className="text-xs font-medium text-muted-foreground">{service.service_number}</span>
                       </div>
@@ -320,8 +320,8 @@ export default function DashboardPage() {
                           )}
                         </div>
                       </div>
-                      <Badge className={getStatusColor(service.status)}>
-                        {SERVICE_STATUS_LABELS[service.status as keyof typeof SERVICE_STATUS_LABELS] || service.status}
+                      <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>
+                        {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || service.status}
                       </Badge>
                     </div>
                   </Link>

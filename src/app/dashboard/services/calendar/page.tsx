@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor, cn } from '@/lib/utils';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -283,8 +283,8 @@ function ServiceCard({ svc }: { svc: any }) {
           <p className="text-sm font-medium truncate">{customer?.full_name || 'Unknown'}</p>
           <p className="text-xs text-muted-foreground">{customer?.customer_code} {customer?.city ? `· ${customer.city}` : ''}</p>
         </div>
-        <Badge className={cn('shrink-0 ml-2 text-[10px]', getStatusColor(svc.status))}>
-          {SERVICE_STATUS_LABELS[svc.status as keyof typeof SERVICE_STATUS_LABELS] || svc.status}
+        <Badge className={cn('shrink-0 ml-2 text-[10px]', getStatusColor(getEffectiveServiceStatus(svc.status, svc.scheduled_date)))}>
+          {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(svc.status, svc.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || svc.status}
         </Badge>
       </div>
       <div className="flex items-center gap-2 mt-2">

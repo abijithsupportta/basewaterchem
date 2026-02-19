@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
@@ -336,7 +336,7 @@ export default function ServiceDetailPage() {
             <h1 className="text-2xl font-bold">{service.service_number}</h1>
             <p className="text-muted-foreground">{SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}</p>
           </div>
-          <Badge className={getStatusColor(service.status)}>{SERVICE_STATUS_LABELS[service.status as keyof typeof SERVICE_STATUS_LABELS]}</Badge>
+          <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS]}</Badge>
         </div>
         <div className="flex gap-2">
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}

@@ -95,6 +95,17 @@ export function getStatusColor(status: string): string {
   return colors[status] || 'bg-gray-100 text-gray-800';
 }
 
+/**
+ * Returns 'overdue' if a service is scheduled/assigned but its date has passed,
+ * otherwise returns the original status.
+ */
+export function getEffectiveServiceStatus(status: string, scheduledDate: string | Date): string {
+  if ((status === 'scheduled' || status === 'assigned') && isBefore(new Date(scheduledDate), new Date(new Date().toDateString()))) {
+    return 'overdue';
+  }
+  return status;
+}
+
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str;
   return str.slice(0, length) + '...';

@@ -11,7 +11,7 @@ import { Loading } from '@/components/ui/loading';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useServices } from '@/hooks/use-services';
-import { formatDate, getStatusColor, cn } from '@/lib/utils';
+import { formatDate, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 
 const STATUS_CHIPS = [
@@ -184,8 +184,8 @@ export default function ServicesPage() {
                       Scheduled: {formatDate(service.scheduled_date)}
                     </p>
                   </div>
-                  <Badge className={getStatusColor(service.status)}>
-                    {SERVICE_STATUS_LABELS[service.status as keyof typeof SERVICE_STATUS_LABELS] || service.status}
+                  <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>
+                    {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || service.status}
                   </Badge>
                 </CardContent>
               </Card>

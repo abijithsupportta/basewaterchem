@@ -8,8 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, getStatusColor } from '@/lib/utils';
-import { SERVICE_TYPE_LABELS } from '@/lib/constants';
+import { formatDate, getStatusColor, getEffectiveServiceStatus } from '@/lib/utils';
+import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function UpcomingServicesPage() {
@@ -59,7 +59,7 @@ export default function UpcomingServicesPage() {
                             {s.scheduled_time_slot && <> | {s.scheduled_time_slot}</>}
                           </p>
                         </div>
-                        <Badge className={getStatusColor(s.status)}>{s.status}</Badge>
+                        <Badge className={getStatusColor(getEffectiveServiceStatus(s.status, s.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(s.status, s.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || s.status}</Badge>
                       </CardContent>
                     </Card>
                   </Link>
@@ -82,7 +82,7 @@ export default function UpcomingServicesPage() {
                             {formatDate(s.scheduled_date)} | {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
                           </p>
                         </div>
-                        <Badge className={getStatusColor(s.status)}>{s.status}</Badge>
+                        <Badge className={getStatusColor(getEffectiveServiceStatus(s.status, s.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(s.status, s.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || s.status}</Badge>
                       </CardContent>
                     </Card>
                   </Link>
