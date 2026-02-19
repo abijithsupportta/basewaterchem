@@ -32,7 +32,12 @@ export class ServiceRepository {
       .select(SERVICE_LIST_SELECT, { count: 'exact' })
       .order('scheduled_date', { ascending: false });
 
-    if (filters?.status) query = query.eq('status', filters.status);
+    if (filters?.status === 'overdue') {
+      const todayStr = new Date().toISOString().split('T')[0];
+      query = query.in('status', ['scheduled', 'assigned']).lt('scheduled_date', todayStr);
+    } else if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
     if (filters?.type) query = query.eq('service_type', filters.type);
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
     if (filters?.dateFrom) query = query.gte('scheduled_date', filters.dateFrom);

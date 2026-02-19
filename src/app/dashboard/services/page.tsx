@@ -16,8 +16,8 @@ import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 
 const STATUS_CHIPS = [
   { value: 'all', label: 'All' },
+  { value: 'overdue', label: 'Overdue' },
   { value: 'scheduled', label: 'Scheduled' },
-  { value: 'assigned', label: 'Pending' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
