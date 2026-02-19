@@ -1,115 +1,64 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { QuotationRepository } from '@/infrastructure/repositories';
+import { InvoiceCalculator } from '@/core/services';
 import type { Quotation, QuotationFormData, QuotationWithDetails } from '@/types';
 
 export function useQuotations(filters?: { status?: string; customerId?: string }) {
   const [quotations, setQuotations] = useState<QuotationWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const supabase = createClient();
+  const repo = useMemo(() => new QuotationRepository(supabase), [supabase]);
 
   const fetchQuotations = useCallback(async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('quotations')
-        .select(`
-          *,
-          customer:customers (id, full_name, phone, email, address_line1, city, customer_code),
-          items:quotation_items (*)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (filters?.status) query = query.eq('status', filters.status);
-      if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
-
-      const { data, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-      setQuotations(data || []);
+      const data = await repo.findAll(filters);
+      setQuotations(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch quotations');
     } finally {
       setLoading(false);
     }
-  }, [supabase, filters?.status, filters?.customerId]);
+  }, [repo, filters?.status, filters?.customerId]);
 
-  useEffect(() => {
-    fetchQuotations();
-  }, [fetchQuotations]);
+  useEffect(() => { fetchQuotations(); }, [fetchQuotations]);
 
-  const getQuotation = async (id: string) => {
-    const { data, error } = await supabase
-      .from('quotations')
-      .select(`
-        *,
-        customer:customers (*),
-        items:quotation_items (*)
-      `)
-      .eq('id', id)
-      .single();
-    if (error) throw error;
-    return data;
-  };
+  const getQuotation = useCallback((id: string) => repo.findById(id), [repo]);
 
-  const createQuotation = async (formData: QuotationFormData) => {
+  const createQuotation = useCallback(async (formData: QuotationFormData) => {
     const { items, ...quotationData } = formData;
-    
-    // Calculate totals
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    const taxAmount = subtotal * ((quotationData.tax_percent || 18) / 100);
-    const totalAmount = subtotal + taxAmount - (quotationData.discount_amount || 0);
+    const calculated = InvoiceCalculator.calculate(
+      items, quotationData.tax_percent, quotationData.discount_amount
+    );
 
-    const { data: quotation, error: qError } = await supabase
-      .from('quotations')
-      .insert({
-        ...quotationData,
-        subtotal,
-        tax_amount: taxAmount,
-        total_amount: totalAmount,
-      })
-      .select()
-      .single();
-    if (qError) throw qError;
+    const quotation = await repo.create({
+      ...quotationData,
+      ...calculated,
+    });
 
-    // Insert items
     const itemsToInsert = items.map((item, index) => ({
       quotation_id: quotation.id,
       ...item,
-      total_price: item.quantity * item.unit_price,
+      total_price: InvoiceCalculator.itemTotal(item.quantity, item.unit_price),
       sort_order: index,
     }));
 
-    const { error: iError } = await supabase
-      .from('quotation_items')
-      .insert(itemsToInsert);
-    if (iError) throw iError;
-
+    await repo.createItems(itemsToInsert);
     await fetchQuotations();
     return quotation;
-  };
+  }, [repo, fetchQuotations]);
 
-  const updateQuotationStatus = async (id: string, status: string) => {
-    const { data, error } = await supabase
-      .from('quotations')
-      .update({ status })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const updateQuotationStatus = useCallback(async (id: string, status: string) => {
+    const data = await repo.update(id, { status } as Partial<Quotation>);
     await fetchQuotations();
     return data;
-  };
+  }, [repo, fetchQuotations]);
 
-  return {
-    quotations,
-    loading,
-    error,
-    fetchQuotations,
-    getQuotation,
-    createQuotation,
-    updateQuotationStatus,
-  };
+  return { quotations, loading, error, fetchQuotations, getQuotation, createQuotation, updateQuotationStatus };
 }

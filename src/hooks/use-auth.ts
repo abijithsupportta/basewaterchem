@@ -1,24 +1,23 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { StaffRepository } from '@/infrastructure/repositories';
 import type { Staff, UserRole } from '@/types';
 
 export function useAuth() {
   const [user, setUser] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
+
   const supabase = createClient();
+  const staffRepo = useMemo(() => new StaffRepository(supabase), [supabase]);
 
   useEffect(() => {
     const getUser = async () => {
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser) {
-          const { data: staffUser } = await supabase
-            .from('staff')
-            .select('*')
-            .eq('auth_user_id', authUser.id)
-            .single();
+          const staffUser = await staffRepo.findByAuthUserId(authUser.id);
           setUser(staffUser);
         }
       } catch (error) {
@@ -32,12 +31,12 @@ export function useAuth() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const { data: staffUser } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('auth_user_id', session.user.id)
-          .single();
-        setUser(staffUser);
+        try {
+          const staffUser = await staffRepo.findByAuthUserId(session.user.id);
+          setUser(staffUser);
+        } catch {
+          setUser(null);
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
       }
@@ -45,7 +44,7 @@ export function useAuth() {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase]);
+  }, [supabase, staffRepo]);
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -67,14 +66,5 @@ export function useAuth() {
   const isManager = user?.role === 'manager';
   const isAdminOrManager = isAdmin || isManager;
 
-  return {
-    user,
-    loading,
-    signIn,
-    signOut,
-    hasRole,
-    isAdmin,
-    isManager,
-    isAdminOrManager,
-  };
+  return { user, loading, signIn, signOut, hasRole, isAdmin, isManager, isAdminOrManager };
 }

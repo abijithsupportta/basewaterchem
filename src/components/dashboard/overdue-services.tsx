@@ -1,38 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Calendar, Phone, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { ServiceRepository } from '@/infrastructure/repositories';
 import { formatDate } from '@/lib/utils';
+import type { ServiceWithDetails } from '@/types';
 
 export function OverdueServices() {
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
 
   useEffect(() => {
     const fetchOverdue = async () => {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        const { data, error } = await supabase
-          .from('services')
-          .select(`
-            *,
-            customer:customers (id, full_name, phone, customer_code, city),
-            customer_product:customer_products (
-              id,
-              product:products (name, brand)
-            )
-          `)
-          .in('status', ['scheduled', 'assigned', 'rescheduled'])
-          .lt('scheduled_date', today)
-          .order('scheduled_date', { ascending: true })
-          .limit(10);
-        if (error) throw error;
-        setServices(data || []);
+        const data = await repo.findOverdue(10);
+        setServices(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -40,7 +28,7 @@ export function OverdueServices() {
       }
     };
     fetchOverdue();
-  }, [supabase]);
+  }, [repo]);
 
   if (!loading && services.length === 0) return null;
 

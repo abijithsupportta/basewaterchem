@@ -1,74 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { ServiceRepository, NotificationRepository } from '@/infrastructure/repositories';
+import { UnauthorizedError } from '@/core/errors';
+import { apiSuccess, apiError } from '@/core/api';
 
-// This endpoint can be called by a cron job to generate upcoming AMC services
-// and create reminder notifications
+interface ServiceWithCustomer {
+  id: string;
+  customers?: { name?: string } | null;
+}
+
 export async function POST(request: NextRequest) {
-  // Verify cron secret for security
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const supabase = await createServiceRoleClient();
-
   try {
+    // Verify cron secret
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      throw new UnauthorizedError('Invalid cron secret');
+    }
+
+    const supabase = await createServiceRoleClient();
+    const serviceRepo = new ServiceRepository(supabase);
+    const notificationRepo = new NotificationRepository(supabase);
+
     // Generate upcoming services from AMC contracts
     const { error: genError } = await supabase.rpc('generate_all_upcoming_services');
     if (genError) throw genError;
 
     // Find services scheduled for tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-    const { data: upcomingServices } = await supabase
-      .from('services')
-      .select('id, customer_id, customers(name)')
-      .eq('scheduled_date', tomorrowStr)
-      .eq('status', 'scheduled');
-
-    // Create notifications for tomorrow's services
-    if (upcomingServices?.length) {
-      const notifications = upcomingServices.map((s: any) => ({
-        type: 'service_reminder' as const,
-        title: 'Service Tomorrow',
-        message: `Service scheduled tomorrow for ${s.customers?.name || 'customer'}`,
-        related_id: s.id,
-        related_type: 'service',
-      }));
-
-      await supabase.from('notifications').insert(notifications);
+    const upcomingServices = await serviceRepo.findUpcoming(100) as ServiceWithCustomer[];
+    if (upcomingServices.length > 0) {
+      await notificationRepo.createMany(
+        upcomingServices.map((s) => ({
+          type: 'service_reminder' as const,
+          title: 'Service Tomorrow',
+          message: `Service scheduled tomorrow for ${s.customers?.name || 'customer'}`,
+          related_id: s.id,
+          related_type: 'service',
+        }))
+      );
     }
 
     // Find overdue services
-    const today = new Date().toISOString().split('T')[0];
-    const { data: overdueServices } = await supabase
-      .from('services')
-      .select('id, customer_id, customers(name)')
-      .lt('scheduled_date', today)
-      .eq('status', 'scheduled');
-
-    if (overdueServices?.length) {
-      const notifications = overdueServices.map((s: any) => ({
-        type: 'service_overdue' as const,
-        title: 'Service Overdue',
-        message: `Overdue service for ${s.customers?.name || 'customer'}`,
-        related_id: s.id,
-        related_type: 'service',
-      }));
-
-      await supabase.from('notifications').insert(notifications);
+    const overdueServices = await serviceRepo.findOverdue(100) as ServiceWithCustomer[];
+    if (overdueServices.length > 0) {
+      await notificationRepo.createMany(
+        overdueServices.map((s) => ({
+          type: 'service_overdue' as const,
+          title: 'Service Overdue',
+          message: `Overdue service for ${s.customers?.name || 'customer'}`,
+          related_id: s.id,
+          related_type: 'service',
+        }))
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      generated: upcomingServices?.length || 0,
-      overdue: overdueServices?.length || 0,
+    return apiSuccess({
+      generated: upcomingServices.length,
+      overdue: overdueServices.length,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return apiError(error);
   }
 }

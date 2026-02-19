@@ -1,33 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { ComplaintRepository } from '@/infrastructure/repositories';
 import { formatRelativeDate, getStatusColor } from '@/lib/utils';
 import { COMPLAINT_PRIORITY_LABELS } from '@/lib/constants';
+import type { ComplaintWithDetails } from '@/types';
 
 export function RecentComplaints() {
-  const [complaints, setComplaints] = useState<any[]>([]);
+  const [complaints, setComplaints] = useState<ComplaintWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const repo = useMemo(() => new ComplaintRepository(supabase), [supabase]);
 
   useEffect(() => {
     const fetchComplaints = async () => {
       try {
-        const { data, error } = await supabase
-          .from('complaints')
-          .select(`
-            *,
-            customer:customers (id, full_name, phone, customer_code)
-          `)
-          .in('status', ['open', 'acknowledged', 'in_progress'])
-          .order('created_at', { ascending: false })
-          .limit(5);
-        if (error) throw error;
-        setComplaints(data || []);
+        const data = await repo.findRecent(5);
+        setComplaints(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -35,7 +29,7 @@ export function RecentComplaints() {
       }
     };
     fetchComplaints();
-  }, [supabase]);
+  }, [repo]);
 
   return (
     <Card>

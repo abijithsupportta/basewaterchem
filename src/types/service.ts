@@ -52,6 +52,32 @@ export interface Service {
   updated_at: string;
 }
 
+export interface ServiceWithDetails extends Service {
+  customer?: {
+    id: string;
+    full_name: string;
+    phone: string;
+    customer_code: string;
+    address_line1?: string;
+    city?: string;
+  } | null;
+  customer_product?: {
+    id: string;
+    serial_number?: string;
+    product?: {
+      id?: string;
+      name: string;
+      brand?: string;
+      model?: string;
+    } | null;
+  } | null;
+  technician?: {
+    id: string;
+    full_name: string;
+    phone?: string;
+  } | null;
+}
+
 export interface ServiceFormData {
   customer_id: string;
   customer_product_id?: string;

@@ -1,39 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { NotificationRepository } from '@/infrastructure/repositories';
+import { apiSuccess, apiError } from '@/core/api';
 
 export async function GET() {
-  const supabase = await createServerSupabaseClient();
-
-  const { data, error } = await supabase
-    .from('notifications')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new NotificationRepository(supabase);
+    const data = await repo.findAll(50);
+    return apiSuccess(data);
+  } catch (error) {
+    return apiError(error);
+  }
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const body = await request.json();
-  const { id, is_read } = body;
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new NotificationRepository(supabase);
+    const body = await request.json();
+    const { id } = body;
 
-  if (id === 'all') {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('is_read', false);
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true });
+    if (id === 'all') {
+      await repo.markAllAsRead();
+    } else {
+      await repo.markAsRead(id);
+    }
+    return apiSuccess({ success: true });
+  } catch (error) {
+    return apiError(error);
   }
-
-  const { error } = await supabase
-    .from('notifications')
-    .update({ is_read: is_read ?? true })
-    .eq('id', id);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
 }

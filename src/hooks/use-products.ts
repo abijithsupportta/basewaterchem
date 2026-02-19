@@ -1,69 +1,46 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { ProductRepository, CustomerProductRepository } from '@/infrastructure/repositories';
 import type { Product, ProductFormData, CustomerProduct, CustomerProductFormData } from '@/types';
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const supabase = createClient();
+  const repo = useMemo(() => new ProductRepository(supabase), [supabase]);
 
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-      if (fetchError) throw fetchError;
-      setProducts(data || []);
+      const { data } = await repo.findAll({ isActive: true });
+      setProducts(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch products');
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [repo]);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  const getProduct = async (id: string) => {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (error) throw error;
-    return data;
-  };
+  const getProduct = useCallback((id: string) => repo.findById(id), [repo]);
 
-  const createProduct = async (formData: ProductFormData) => {
-    const { data, error } = await supabase
-      .from('products')
-      .insert(formData)
-      .select()
-      .single();
-    if (error) throw error;
+  const createProduct = useCallback(async (formData: ProductFormData) => {
+    const data = await repo.create(formData);
     await fetchProducts();
     return data;
-  };
+  }, [repo, fetchProducts]);
 
-  const updateProduct = async (id: string, formData: Partial<ProductFormData>) => {
-    const { data, error } = await supabase
-      .from('products')
-      .update(formData)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const updateProduct = useCallback(async (id: string, formData: Partial<ProductFormData>) => {
+    const data = await repo.update(id, formData);
     await fetchProducts();
     return data;
-  };
+  }, [repo, fetchProducts]);
 
   return { products, loading, error, fetchProducts, getProduct, createProduct, updateProduct };
 }
@@ -71,41 +48,30 @@ export function useProducts() {
 export function useCustomerProducts(customerId?: string) {
   const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
   const [loading, setLoading] = useState(true);
+
   const supabase = createClient();
+  const repo = useMemo(() => new CustomerProductRepository(supabase), [supabase]);
 
   const fetchCustomerProducts = useCallback(async () => {
     if (!customerId) return;
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('customer_products')
-        .select(`*, product:products (*)`)
-        .eq('customer_id', customerId)
-        .eq('status', 'active')
-        .order('installation_date', { ascending: false });
-      if (error) throw error;
-      setCustomerProducts(data || []);
+      const data = await repo.findByCustomer(customerId);
+      setCustomerProducts(data);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to fetch customer products:', err);
     } finally {
       setLoading(false);
     }
-  }, [supabase, customerId]);
+  }, [repo, customerId]);
 
-  useEffect(() => {
-    fetchCustomerProducts();
-  }, [fetchCustomerProducts]);
+  useEffect(() => { fetchCustomerProducts(); }, [fetchCustomerProducts]);
 
-  const addCustomerProduct = async (formData: CustomerProductFormData) => {
-    const { data, error } = await supabase
-      .from('customer_products')
-      .insert(formData)
-      .select()
-      .single();
-    if (error) throw error;
+  const addCustomerProduct = useCallback(async (formData: CustomerProductFormData) => {
+    const data = await repo.create(formData);
     await fetchCustomerProducts();
     return data;
-  };
+  }, [repo, fetchCustomerProducts]);
 
   return { customerProducts, loading, fetchCustomerProducts, addCustomerProduct };
 }

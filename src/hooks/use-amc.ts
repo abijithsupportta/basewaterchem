@@ -1,111 +1,54 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { AmcRepository } from '@/infrastructure/repositories';
+import { AmcContractRules } from '@/core/services';
 import type { AmcContract, AmcFormData, AmcContractWithDetails } from '@/types';
 
 export function useAmc(filters?: { status?: string; customerId?: string }) {
   const [contracts, setContracts] = useState<AmcContractWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const supabase = createClient();
+  const repo = useMemo(() => new AmcRepository(supabase), [supabase]);
 
   const fetchContracts = useCallback(async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('amc_contracts')
-        .select(`
-          *,
-          customer:customers (id, full_name, phone, customer_code),
-          customer_product:customer_products (
-            id, serial_number,
-            product:products (id, name, brand, model)
-          )
-        `)
-        .order('end_date', { ascending: true });
-
-      if (filters?.status) query = query.eq('status', filters.status);
-      if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
-
-      const { data, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-      setContracts(data || []);
+      const data = await repo.findAll(filters);
+      setContracts(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch AMC contracts');
     } finally {
       setLoading(false);
     }
-  }, [supabase, filters?.status, filters?.customerId]);
+  }, [repo, filters?.status, filters?.customerId]);
 
-  useEffect(() => {
-    fetchContracts();
-  }, [fetchContracts]);
+  useEffect(() => { fetchContracts(); }, [fetchContracts]);
 
-  const getContract = async (id: string) => {
-    const { data, error } = await supabase
-      .from('amc_contracts')
-      .select(`
-        *,
-        customer:customers (*),
-        customer_product:customer_products (*, product:products (*))
-      `)
-      .eq('id', id)
-      .single();
-    if (error) throw error;
-    return data;
-  };
+  const getContract = useCallback((id: string) => repo.findById(id), [repo]);
 
-  const createContract = async (formData: AmcFormData) => {
-    const { data, error } = await supabase
-      .from('amc_contracts')
-      .insert(formData)
-      .select()
-      .single();
-    if (error) throw error;
+  const createContract = useCallback(async (formData: AmcFormData) => {
+    const data = await repo.create(formData);
     await fetchContracts();
     return data;
-  };
+  }, [repo, fetchContracts]);
 
-  const updateContract = async (id: string, formData: Partial<AmcContract>) => {
-    const { data, error } = await supabase
-      .from('amc_contracts')
-      .update(formData)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const updateContract = useCallback(async (id: string, formData: Partial<AmcContract>) => {
+    const data = await repo.update(id, formData);
     await fetchContracts();
     return data;
-  };
+  }, [repo, fetchContracts]);
 
-  const renewContract = async (id: string, newEndDate: string, amount: number) => {
-    const { data, error } = await supabase
-      .from('amc_contracts')
-      .update({
-        end_date: newEndDate,
-        amount,
-        status: 'active',
-        services_completed: 0,
-        is_paid: false,
-      })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const renewContract = useCallback(async (id: string, newEndDate: string, amount: number) => {
+    const payload = AmcContractRules.buildRenewalPayload(newEndDate, amount);
+    const data = await repo.update(id, payload);
     await fetchContracts();
     return data;
-  };
+  }, [repo, fetchContracts]);
 
-  return {
-    contracts,
-    loading,
-    error,
-    fetchContracts,
-    getContract,
-    createContract,
-    updateContract,
-    renewContract,
-  };
+  return { contracts, loading, error, fetchContracts, getContract, createContract, updateContract, renewContract };
 }

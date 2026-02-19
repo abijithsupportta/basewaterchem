@@ -11,6 +11,7 @@ export type {
 } from './product';
 export type {
   Service,
+  ServiceWithDetails,
   ServiceFormData,
   ServiceCompleteData,
   ServiceType,

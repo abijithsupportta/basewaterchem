@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Users, Package, FileCheck, Wrench, AlertTriangle, Clock,
   Calendar, CreditCard, TrendingUp
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { DashboardRepository } from '@/infrastructure/repositories';
 import type { DashboardStats } from '@/types';
 
 const defaultStats: DashboardStats = {
@@ -25,15 +26,13 @@ export function StatsCards() {
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const repo = useMemo(() => new DashboardRepository(supabase), [supabase]);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const { data, error } = await supabase
-          .from('dashboard_stats_view')
-          .select('*')
-          .single();
-        if (data) setStats(data);
+        const data = await repo.getStats();
+        setStats(data);
       } catch (err) {
         console.error('Error fetching stats:', err);
       } finally {
@@ -41,7 +40,7 @@ export function StatsCards() {
       }
     };
     fetchStats();
-  }, [supabase]);
+  }, [repo]);
 
   const cards = [
     { title: 'Total Customers', value: stats.total_customers, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },

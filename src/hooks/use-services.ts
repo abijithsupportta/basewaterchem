@@ -1,7 +1,9 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { ServiceRepository } from '@/infrastructure/repositories';
+import { ServiceCalculator } from '@/core/services';
 import type { Service, ServiceFormData, ServiceCompleteData, UpcomingServiceView } from '@/types';
 
 export function useServices(filters?: {
@@ -15,153 +17,75 @@ export function useServices(filters?: {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const supabase = createClient();
+  const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
 
   const fetchServices = useCallback(async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('services')
-        .select(`
-          *,
-          customer:customers (id, full_name, phone, customer_code),
-          customer_product:customer_products (
-            id, serial_number,
-            product:products (id, name, brand, model)
-          ),
-          technician:staff!services_assigned_technician_id_fkey (id, full_name, phone)
-        `)
-        .order('scheduled_date', { ascending: false });
-
-      if (filters?.status) query = query.eq('status', filters.status);
-      if (filters?.type) query = query.eq('service_type', filters.type);
-      if (filters?.technicianId) query = query.eq('assigned_technician_id', filters.technicianId);
-      if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
-      if (filters?.dateFrom) query = query.gte('scheduled_date', filters.dateFrom);
-      if (filters?.dateTo) query = query.lte('scheduled_date', filters.dateTo);
-
-      const { data, error: fetchError } = await query;
-      if (fetchError) throw fetchError;
-      setServices(data || []);
+      const { data } = await repo.findAll(filters);
+      setServices(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch services');
     } finally {
       setLoading(false);
     }
-  }, [supabase, filters?.status, filters?.type, filters?.technicianId, filters?.customerId, filters?.dateFrom, filters?.dateTo]);
+  }, [repo, filters?.status, filters?.type, filters?.technicianId, filters?.customerId, filters?.dateFrom, filters?.dateTo]);
 
-  useEffect(() => {
-    fetchServices();
-  }, [fetchServices]);
+  useEffect(() => { fetchServices(); }, [fetchServices]);
 
-  const getService = async (id: string) => {
-    const { data, error } = await supabase
-      .from('services')
-      .select(`
-        *,
-        customer:customers (*),
-        customer_product:customer_products (*, product:products (*)),
-        technician:staff!services_assigned_technician_id_fkey (*),
-        amc_contract:amc_contracts (*),
-        complaint:complaints (*)
-      `)
-      .eq('id', id)
-      .single();
-    if (error) throw error;
-    return data;
-  };
+  const getService = useCallback((id: string) => repo.findById(id), [repo]);
 
-  const createService = async (formData: ServiceFormData) => {
-    const { data, error } = await supabase
-      .from('services')
-      .insert(formData)
-      .select()
-      .single();
-    if (error) throw error;
+  const createService = useCallback(async (formData: ServiceFormData) => {
+    const data = await repo.create(formData);
     await fetchServices();
     return data;
-  };
+  }, [repo, fetchServices]);
 
-  const updateService = async (id: string, formData: Partial<Service>) => {
-    const { data, error } = await supabase
-      .from('services')
-      .update(formData)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const updateService = useCallback(async (id: string, formData: Partial<Service>) => {
+    const data = await repo.update(id, formData);
     await fetchServices();
     return data;
-  };
+  }, [repo, fetchServices]);
 
-  const completeService = async (id: string, completeData: ServiceCompleteData) => {
-    const { data, error } = await supabase
-      .from('services')
-      .update({
-        ...completeData,
-        status: 'completed',
-        total_amount: (completeData.parts_cost || 0) + (completeData.service_charge || 0),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw error;
+  const completeService = useCallback(async (id: string, completeData: ServiceCompleteData) => {
+    const payload = ServiceCalculator.buildCompletionPayload(completeData);
+    const data = await repo.update(id, payload);
     await fetchServices();
     return data;
-  };
+  }, [repo, fetchServices]);
 
-  const assignTechnician = async (serviceId: string, technicianId: string) => {
-    const { data, error } = await supabase
-      .from('services')
-      .update({
-        assigned_technician_id: technicianId,
-        status: 'assigned',
-      })
-      .eq('id', serviceId)
-      .select()
-      .single();
-    if (error) throw error;
+  const assignTechnician = useCallback(async (serviceId: string, technicianId: string) => {
+    const payload = ServiceCalculator.buildAssignmentPayload(technicianId);
+    const data = await repo.update(serviceId, payload);
     await fetchServices();
     return data;
-  };
+  }, [repo, fetchServices]);
 
-  return {
-    services,
-    loading,
-    error,
-    fetchServices,
-    getService,
-    createService,
-    updateService,
-    completeService,
-    assignTechnician,
-  };
+  return { services, loading, error, fetchServices, getService, createService, updateService, completeService, assignTechnician };
 }
 
 export function useUpcomingServices() {
   const [services, setServices] = useState<UpcomingServiceView[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
 
   useEffect(() => {
     const fetch = async () => {
       try {
-        const { data, error } = await supabase
-          .from('upcoming_services_view')
-          .select('*')
-          .order('scheduled_date', { ascending: true })
-          .limit(50);
-        if (error) throw error;
-        setServices(data || []);
+        const data = await repo.findUpcoming(50);
+        setServices(data as unknown as UpcomingServiceView[]);
       } catch (err) {
-        console.error(err);
+        console.error('Failed to fetch upcoming services:', err);
       } finally {
         setLoading(false);
       }
     };
     fetch();
-  }, [supabase]);
+  }, [repo]);
 
   return { services, loading };
 }

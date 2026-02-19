@@ -1,39 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Calendar, MapPin, Phone, User, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { ServiceRepository } from '@/infrastructure/repositories';
 import { formatDate, getStatusColor, getServiceTypeLabel } from '@/lib/utils';
+import type { ServiceWithDetails } from '@/types';
 
 export function UpcomingServices() {
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
 
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        const { data, error } = await supabase
-          .from('services')
-          .select(`
-            *,
-            customer:customers (id, full_name, phone, customer_code, address_line1, city),
-            customer_product:customer_products (
-              id,
-              product:products (name, brand, model)
-            ),
-            technician:staff!services_assigned_technician_id_fkey (full_name, phone)
-          `)
-          .in('status', ['scheduled', 'assigned'])
-          .gte('scheduled_date', today)
-          .order('scheduled_date', { ascending: true })
-          .limit(10);
-        if (error) throw error;
-        setServices(data || []);
+        const data = await repo.findUpcoming(10);
+        setServices(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -41,7 +28,7 @@ export function UpcomingServices() {
       }
     };
     fetchServices();
-  }, [supabase]);
+  }, [repo]);
 
   return (
     <Card>

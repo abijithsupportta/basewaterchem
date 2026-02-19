@@ -1,53 +1,46 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { QuotationRepository } from '@/infrastructure/repositories';
+import { InvoiceCalculator } from '@/core/services';
+import { quotationSchema } from '@/lib/validators';
+import { apiSuccess, apiError } from '@/core/api';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { searchParams } = new URL(request.url);
-  const status = searchParams.get('status');
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new QuotationRepository(supabase);
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status') || undefined;
 
-  let query = supabase
-    .from('quotations')
-    .select(`
-      *,
-      customers(id, name, phone, location)
-    `)
-    .order('created_at', { ascending: false });
-
-  if (status) query = query.eq('status', status);
-
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+    const data = await repo.findAll({ status });
+    return apiSuccess(data);
+  } catch (error) {
+    return apiError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const body = await request.json();
-  const { items, ...quotationData } = body;
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new QuotationRepository(supabase);
+    const body = await request.json();
+    const validated = quotationSchema.parse(body);
+    const { items, ...quotationData } = validated;
 
-  // Insert quotation
-  const { data: quotation, error: qError } = await supabase
-    .from('quotations')
-    .insert(quotationData)
-    .select()
-    .single();
+    const calculated = InvoiceCalculator.calculate(
+      items,
+      quotationData.tax_percent ?? 0,
+      quotationData.discount_amount ?? 0
+    );
 
-  if (qError) return NextResponse.json({ error: qError.message }, { status: 400 });
-
-  // Insert quotation items
-  if (items?.length > 0) {
-    const itemsWithQuotationId = items.map((item: any) => ({
-      ...item,
-      quotation_id: quotation.id,
-    }));
-
-    const { error: iError } = await supabase
-      .from('quotation_items')
-      .insert(itemsWithQuotationId);
-
-    if (iError) return NextResponse.json({ error: iError.message }, { status: 400 });
+    const quotation = await repo.create({ ...quotationData, ...calculated });
+    if (items.length > 0) {
+      await repo.createItems(
+        items.map((item) => ({ ...item, quotation_id: quotation.id }))
+      );
+    }
+    return apiSuccess(quotation, 201);
+  } catch (error) {
+    return apiError(error);
   }
-
-  return NextResponse.json(quotation, { status: 201 });
 }

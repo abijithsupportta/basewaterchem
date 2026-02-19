@@ -1,39 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { AmcRepository } from '@/infrastructure/repositories';
+import { amcSchema } from '@/lib/validators';
+import { apiSuccess, apiError } from '@/core/api';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { searchParams } = new URL(request.url);
-  const status = searchParams.get('status');
-  const customerId = searchParams.get('customer_id');
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new AmcRepository(supabase);
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status') || undefined;
+    const customerId = searchParams.get('customer_id') || undefined;
 
-  let query = supabase
-    .from('amc_contracts')
-    .select(`
-      *,
-      customers(id, name, phone, location),
-      customer_products(id, products(id, name))
-    `)
-    .order('created_at', { ascending: false });
-
-  if (status) query = query.eq('status', status);
-  if (customerId) query = query.eq('customer_id', customerId);
-
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+    const data = await repo.findAll({ status, customerId });
+    return apiSuccess(data);
+  } catch (error) {
+    return apiError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const body = await request.json();
-
-  const { data, error } = await supabase
-    .from('amc_contracts')
-    .insert(body)
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json(data, { status: 201 });
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new AmcRepository(supabase);
+    const body = await request.json();
+    const validated = amcSchema.parse(body);
+    const data = await repo.create(validated);
+    return apiSuccess(data, 201);
+  } catch (error) {
+    return apiError(error);
+  }
 }

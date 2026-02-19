@@ -1,39 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { ComplaintRepository } from '@/infrastructure/repositories';
+import { complaintSchema } from '@/lib/validators';
+import { apiSuccess, apiError } from '@/core/api';
 
 export async function GET(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { searchParams } = new URL(request.url);
-  const status = searchParams.get('status');
-  const priority = searchParams.get('priority');
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new ComplaintRepository(supabase);
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status') || undefined;
+    const priority = searchParams.get('priority') || undefined;
 
-  let query = supabase
-    .from('complaints')
-    .select(`
-      *,
-      customers(id, name, phone, location),
-      customer_products(id, products(id, name))
-    `)
-    .order('created_at', { ascending: false });
-
-  if (status) query = query.eq('status', status);
-  if (priority) query = query.eq('priority', priority);
-
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+    const data = await repo.findAll({ status, priority });
+    return apiSuccess(data);
+  } catch (error) {
+    return apiError(error);
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const body = await request.json();
-
-  const { data, error } = await supabase
-    .from('complaints')
-    .insert(body)
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json(data, { status: 201 });
+  try {
+    const supabase = await createServerSupabaseClient();
+    const repo = new ComplaintRepository(supabase);
+    const body = await request.json();
+    const validated = complaintSchema.parse(body);
+    const data = await repo.create(validated);
+    return apiSuccess(data, 201);
+  } catch (error) {
+    return apiError(error);
+  }
 }
