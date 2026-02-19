@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, CalendarDays, Wrench, FileCheck, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Wrench, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -187,26 +187,12 @@ export default function CalendarPage() {
                         )}>
                           {day}
                         </span>
-                        {dayData && (
-                          <div className="mt-1 space-y-0.5">
-                            {dayData.amcCount > 0 && (
-                              <div className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5">
-                                <FileCheck className="h-2.5 w-2.5" />
-                                <span>{dayData.amcCount} AMC</span>
-                              </div>
-                            )}
-                            {dayData.paidCount > 0 && (
-                              <div className="flex items-center gap-1 text-[10px] text-orange-600 bg-orange-50 rounded px-1 py-0.5">
-                                <Wrench className="h-2.5 w-2.5" />
-                                <span>{dayData.paidCount} Paid</span>
-                              </div>
-                            )}
-                            {dayData.installationCount > 0 && (
-                              <div className="flex items-center gap-1 text-[10px] text-purple-600 bg-purple-50 rounded px-1 py-0.5">
-                                <Wrench className="h-2.5 w-2.5" />
-                                <span>{dayData.installationCount} Install</span>
-                              </div>
-                            )}
+                        {dayData && dayData.totalCount > 0 && (
+                          <div className="mt-1">
+                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-1">
+                              <Wrench className="h-3 w-3" />
+                              <span>{dayData.totalCount}</span>
+                            </div>
                           </div>
                         )}
                       </button>
