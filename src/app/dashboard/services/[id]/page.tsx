@@ -29,6 +29,7 @@ export default function ServiceDetailPage() {
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [markingDone, setMarkingDone] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
 
@@ -73,6 +74,83 @@ export default function ServiceDetailPage() {
     if (error) { toast.error('Failed to start'); return; }
     toast.success('Service started!');
     setService((s: any) => ({ ...s, status: 'in_progress' }));
+  };
+
+  // Mark AMC service as already done (service was done separately) and schedule next
+  const handleMarkAsDone = async () => {
+    if (!confirm('Mark this AMC service as already done? The next AMC service will be scheduled from today + cycle period.')) return;
+    setMarkingDone(true);
+    try {
+      const supabase = createBrowserClient();
+      const now = new Date();
+      const completedDateStr = now.toISOString();
+
+      // Mark current service as completed
+      await supabase.from('services').update({
+        status: 'completed',
+        completed_date: completedDateStr,
+        work_done: 'Service already completed (marked as done)',
+      }).eq('id', id);
+
+      // Schedule next AMC service if this is an AMC service
+      if (service.amc_contract_id) {
+        const { data: amcData } = await supabase.from('amc_contracts')
+          .select('*')
+          .eq('id', service.amc_contract_id)
+          .single();
+
+        if (amcData && amcData.status === 'active') {
+          const { data: existingServices } = await supabase.from('services')
+            .select('id')
+            .eq('amc_contract_id', service.amc_contract_id)
+            .in('status', ['scheduled', 'assigned'])
+            .neq('id', id);
+
+          if (!existingServices || existingServices.length === 0) {
+            const intervalMonths = amcData.service_interval_months || 3;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const nextDate = new Date(today);
+            nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+            const nextDateStr = nextDate.toISOString().split('T')[0];
+
+            await supabase.from('amc_contracts').update({
+              services_completed: (amcData.services_completed || 0) + 1,
+              next_service_date: nextDateStr,
+              end_date: nextDateStr,
+            }).eq('id', service.amc_contract_id);
+
+            await supabase.from('services').insert({
+              customer_id: service.customer_id,
+              amc_contract_id: service.amc_contract_id,
+              service_type: 'amc_service',
+              status: 'scheduled',
+              scheduled_date: nextDateStr,
+              description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
+              is_under_amc: true,
+              payment_status: 'not_applicable',
+            });
+
+            toast.success(`Marked as done! Next AMC scheduled for ${nextDateStr}`);
+          } else {
+            await supabase.from('amc_contracts').update({
+              services_completed: (amcData.services_completed || 0) + 1,
+            }).eq('id', service.amc_contract_id);
+            toast.success('Marked as done!');
+          }
+        } else {
+          toast.success('Marked as done!');
+        }
+      } else {
+        toast.success('Marked as done!');
+      }
+
+      setService((s: any) => ({ ...s, status: 'completed', completed_date: completedDateStr, work_done: 'Service already completed (marked as done)' }));
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to mark as done');
+    } finally {
+      setMarkingDone(false);
+    }
   };
 
   const handleCompleteService = async () => {
@@ -211,6 +289,12 @@ export default function ServiceDetailPage() {
         </div>
         <div className="flex gap-2">
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}
+          {service.status === 'scheduled' && service.service_type === 'amc_service' && (
+            <Button variant="secondary" onClick={handleMarkAsDone} disabled={markingDone}>
+              {markingDone ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+              Already Done
+            </Button>
+          )}
           {(service.status === 'in_progress' || service.status === 'assigned') && <Button onClick={() => setShowCompleteForm(true)}><CheckCircle className="mr-2 h-4 w-4" /> Complete</Button>}
           <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
             {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash className="mr-2 h-4 w-4" />}
