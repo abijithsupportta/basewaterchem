@@ -16,6 +16,7 @@ import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { notifyCustomer } from '@/lib/notify-client';
 
 interface CompletionItem {
   part_name: string;
@@ -132,6 +133,18 @@ export default function ServiceDetailPage() {
             });
 
             toast.success(`Marked as done! Next service scheduled for ${nextDateStr}`);
+            // Notify: next service scheduled
+            const cust = service.customer as any;
+            if (cust?.email) {
+              notifyCustomer('service_scheduled', {
+                customerEmail: cust.email,
+                customerName: cust.full_name,
+                serviceNumber: `Next Service`,
+                serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
+                scheduledDate: nextDateStr,
+                description: `Recurring service - ${amcData.contract_number || 'Scheduled'}`,
+              });
+            }
           } else {
             await supabase.from('amc_contracts').update({
               services_completed: (amcData.services_completed || 0) + 1,
@@ -143,6 +156,19 @@ export default function ServiceDetailPage() {
         }
       } else {
         toast.success('Marked as done!');
+      }
+
+      // Notify: service completed
+      const custDone = service.customer as any;
+      if (custDone?.email) {
+        notifyCustomer('service_completed', {
+          customerEmail: custDone.email,
+          customerName: custDone.full_name,
+          serviceNumber: service.service_number || `SRV-${id?.toString().slice(0, 8)}`,
+          serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
+          completedDate: completedDateStr,
+          workDone: 'Service already completed (marked as done)',
+        });
       }
 
       setService((s: any) => ({ ...s, status: 'completed', completed_date: completedDateStr, work_done: 'Service already completed (marked as done)' }));
@@ -221,6 +247,18 @@ export default function ServiceDetailPage() {
             });
 
             toast.success(`Service completed! Next service scheduled for ${nextDateStr}`);
+            // Notify: next service scheduled
+            const custNext = service.customer as any;
+            if (custNext?.email) {
+              notifyCustomer('service_scheduled', {
+                customerEmail: custNext.email,
+                customerName: custNext.full_name,
+                serviceNumber: `Next Service`,
+                serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
+                scheduledDate: nextDateStr,
+                description: `Recurring service - ${amcData.contract_number || 'Scheduled'}`,
+              });
+            }
           } else {
             // Just update services_completed count
             await supabase.from('amc_contracts').update({
@@ -233,6 +271,20 @@ export default function ServiceDetailPage() {
         }
       } else {
         toast.success('Service completed!');
+      }
+
+      // Notify: service completed
+      const custComplete = service.customer as any;
+      if (custComplete?.email) {
+        notifyCustomer('service_completed', {
+          customerEmail: custComplete.email,
+          customerName: custComplete.full_name,
+          serviceNumber: service.service_number || `SRV-${id?.toString().slice(0, 8)}`,
+          serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
+          completedDate: updateData.completed_date,
+          workDone: workDone,
+          totalAmount: Math.max(totalAmount, 0),
+        });
       }
 
       setService((s: any) => ({ ...s, ...updateData }));

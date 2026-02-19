@@ -20,6 +20,7 @@ import { useCustomers } from '@/hooks/use-customers';
 import { formatCurrency } from '@/lib/utils';
 import { DEFAULT_TAX_PERCENT } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { notifyCustomer } from '@/lib/notify-client';
 
 export default function NewInvoicePage() {
   return <Suspense fallback={<Loading />}><NewInvoiceContent /></Suspense>;
@@ -135,6 +136,19 @@ function NewInvoiceContent() {
           payment_status: 'not_applicable',
         });
         if (srvError) throw srvError;
+
+        // Notify customer about scheduled recurring service
+        const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
+        if (selectedCust?.email) {
+          notifyCustomer('service_scheduled', {
+            customerEmail: selectedCust.email,
+            customerName: selectedCust.full_name,
+            serviceNumber: invoice.invoice_number || 'New Service',
+            serviceType: 'Recurring Service',
+            scheduledDate: firstServiceDate.toISOString().split('T')[0],
+            description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,
+          });
+        }
       }
 
       toast.success(amc_enabled ? 'Invoice created with recurring service!' : 'Invoice created!');
