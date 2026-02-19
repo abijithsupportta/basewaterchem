@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Loader2, IndianRupee, Download } from 'lucide-react';
-import { downloadInvoicePDF, printInvoicePDF } from '@/lib/invoice-pdf';
+import { ArrowLeft, Loader2, IndianRupee, Download } from 'lucide-react';
+import { downloadInvoicePDF } from '@/lib/invoice-pdf';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,16 +91,6 @@ export default function InvoiceDetailPage() {
     );
   };
 
-  const handlePrintInvoice = () => {
-    if (!invoice || !companySettings) return;
-    const customer = invoice.customer as any;
-    printInvoicePDF(
-      { ...invoice, customer: { full_name: customer?.full_name, phone: customer?.phone, email: customer?.email, address_line1: customer?.address_line1, city: customer?.city, state: customer?.state, pincode: customer?.pincode, customer_code: customer?.customer_code } },
-      items,
-      companySettings
-    );
-  };
-
   if (loading) return <Loading />;
   if (!invoice) {
     return (
@@ -137,11 +127,19 @@ export default function InvoiceDetailPage() {
             <Button onClick={() => { setPaymentAmount(invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0))); setShowPayment(true); }}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
           )}
           <Button variant="outline" onClick={handleDownloadPDF}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
-          <Button variant="outline" onClick={handlePrintInvoice}><Printer className="mr-2 h-4 w-4" /> Print</Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Invoice Overview</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-medium">{invoice.invoice_number}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span>{formatDate(invoice.invoice_date)}</span></div>
+            {invoice.due_date && <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span>{formatDate(invoice.due_date)}</span></div>}
+            <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Status</span><Badge className={getStatusColor(invoice.status)}>{INVOICE_STATUS_LABELS[invoice.status as keyof typeof INVOICE_STATUS_LABELS] || invoice.status}</Badge></div>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Customer</CardTitle></CardHeader>
           <CardContent>
@@ -166,16 +164,37 @@ export default function InvoiceDetailPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Items</CardTitle></CardHeader>
         <CardContent>
-          <table className="w-full text-sm">
-            <thead><tr className="border-b text-left"><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">Item</th><th className="pb-2 font-medium">Description</th><th className="pb-2 font-medium text-right">Qty</th><th className="pb-2 font-medium text-right">Price</th><th className="pb-2 font-medium text-right">Total</th></tr></thead>
-            <tbody>
-              {items.map((item, idx) => (
-                <tr key={item.id} className="border-b">
-                  <td className="py-2">{idx + 1}</td><td className="py-2">{item.item_name || '-'}</td><td className="py-2">{item.description}</td><td className="py-2 text-right">{item.quantity}</td><td className="py-2 text-right">{formatCurrency(item.unit_price)}</td><td className="py-2 text-right">{formatCurrency(item.total_price)}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-left">
+                  <th className="pb-2 pt-2 px-2 font-medium">#</th>
+                  <th className="pb-2 pt-2 px-2 font-medium">Item</th>
+                  <th className="pb-2 pt-2 px-2 font-medium">Description</th>
+                  <th className="pb-2 pt-2 px-2 font-medium text-right">Qty</th>
+                  <th className="pb-2 pt-2 px-2 font-medium text-right">Price</th>
+                  <th className="pb-2 pt-2 px-2 font-medium text-right">Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-muted-foreground">No line items found</td>
+                  </tr>
+                )}
+                {items.map((item, idx) => (
+                  <tr key={item.id} className="border-b last:border-0">
+                    <td className="py-2 px-2">{idx + 1}</td>
+                    <td className="py-2 px-2 font-medium">{item.item_name || '-'}</td>
+                    <td className="py-2 px-2 text-muted-foreground">{item.description || '-'}</td>
+                    <td className="py-2 px-2 text-right">{item.quantity}</td>
+                    <td className="py-2 px-2 text-right">{formatCurrency(item.unit_price)}</td>
+                    <td className="py-2 px-2 text-right font-medium">{formatCurrency(item.total_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="border-t mt-4 pt-4 space-y-1 text-right">
             <p className="text-sm">Subtotal: {formatCurrency(invoice.subtotal)}</p>
             <p className="text-sm">Tax ({invoice.tax_percent}%): {formatCurrency(invoice.tax_amount)}</p>
@@ -201,7 +220,7 @@ export default function InvoiceDetailPage() {
                   <div className="flex justify-between border-t pt-1 font-bold"><span className="text-red-600">Due Amount</span><span className="text-red-600">{formatCurrency(balanceDue)}</span></div>
                 </div>
                 <div className="space-y-2">
-                  <Label>Amount (₹)</Label>
+                  <Label>Amount (Rs)</Label>
                   <Input
                     type="number"
                     value={paymentAmount}

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Calendar, Clock, Download, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } fro
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
 import { useUserRole } from '@/lib/use-user-role';
+import { downloadServicePDF } from '@/lib/service-pdf';
 
 interface CompletionItem {
   part_name: string;
@@ -34,6 +35,7 @@ export default function ServiceDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [markingDone, setMarkingDone] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const [companySettings, setCompanySettings] = useState<any>(null);
 
   // Completion form state
   const [workDone, setWorkDone] = useState('');
@@ -59,16 +61,39 @@ export default function ServiceDetailPage() {
   useEffect(() => {
     if (!id) return;
     const supabase = createBrowserClient();
-    supabase
-      .from('services')
-      .select('*, customer:customers(*)')
-      .eq('id', id)
-      .single()
-      .then(({ data }) => {
-        if (data) setService(data);
-        setLoading(false);
-      });
+    Promise.all([
+      supabase
+        .from('services')
+        .select('*, customer:customers(*)')
+        .eq('id', id)
+        .single(),
+      fetch('/api/settings').then((r) => r.json()),
+    ]).then(([serviceRes, settings]) => {
+      if (serviceRes.data) setService(serviceRes.data);
+      if (settings) setCompanySettings(settings);
+      setLoading(false);
+    });
   }, [id]);
+
+  const handleDownloadServicePdf = () => {
+    if (!service) return;
+    const customer = service.customer as any;
+    downloadServicePDF(
+      {
+        ...service,
+        customer: {
+          full_name: customer?.full_name,
+          phone: customer?.phone,
+          email: customer?.email,
+          address_line1: customer?.address_line1,
+          city: customer?.city,
+          state: customer?.state,
+          pincode: customer?.pincode,
+        },
+      },
+      companySettings
+    );
+  };
 
   const handleStartService = async () => {
     const supabase = createBrowserClient();
@@ -322,6 +347,9 @@ export default function ServiceDetailPage() {
           <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS]}</Badge>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleDownloadServicePdf}>
+            <Download className="mr-2 h-4 w-4" /> Download PDF
+          </Button>
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}
           {service.status === 'scheduled' && service.service_type === 'amc_service' && (
             <Button variant="secondary" onClick={handleMarkAsDone} disabled={markingDone}>
@@ -437,7 +465,7 @@ export default function ServiceDetailPage() {
               {items.length > 0 && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-[1fr_80px_100px_40px] gap-2 text-xs font-medium text-muted-foreground">
-                    <span>Item Name</span><span className="text-center">Qty</span><span className="text-right">Unit Price (₹)</span><span />
+                    <span>Item Name</span><span className="text-center">Qty</span><span className="text-right">Unit Price (Rs)</span><span />
                   </div>
                   {items.map((item, index) => (
                     <div key={index} className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
@@ -472,11 +500,11 @@ export default function ServiceDetailPage() {
             {/* Charges */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Service Charge (₹)</Label>
+                <Label>Service Charge (Rs)</Label>
                 <Input type="number" min={0} value={serviceCharge} onChange={(e) => setServiceCharge(Number(e.target.value))} />
               </div>
               <div className="space-y-2">
-                <Label>Discount (₹)</Label>
+                <Label>Discount (Rs)</Label>
                 <Input type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
               </div>
             </div>

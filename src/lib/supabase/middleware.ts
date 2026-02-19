@@ -34,6 +34,22 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/forgot-password');
 
+  if (user && !isAuthPage) {
+    const { data: staff } = await supabase
+      .from('staff')
+      .select('is_active')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+
+    if (staff && staff.is_active === false) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('error', 'account_inactive');
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (!user && !isAuthPage && request.nextUrl.pathname !== '/') {
     const url = request.nextUrl.clone();
     url.pathname = '/login';

@@ -57,6 +57,10 @@ function formatINR(amount: number): string {
   }).format(amount);
 }
 
+function formatMoney(amount: number): string {
+  return `Rs ${formatINR(amount)}`;
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -213,7 +217,7 @@ export function generateInvoicePDF(
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Description', 'Qty', 'Rate (₹)', 'Amount (₹)']],
+    head: [['#', 'Description', 'Qty', 'Rate (Rs)', 'Amount (Rs)']],
     body: tableRows,
     theme: 'grid',
     headStyles: {
@@ -247,18 +251,18 @@ export function generateInvoicePDF(
   doc.setFont('helvetica', 'normal');
 
   doc.text('Subtotal:', totalsX, y, { align: 'left' });
-  doc.text(formatINR(invoice.subtotal), valuesX, y, { align: 'right' });
+  doc.text(formatMoney(invoice.subtotal), valuesX, y, { align: 'right' });
   y += 6;
 
   if (invoice.tax_amount > 0) {
     doc.text(`GST (${invoice.tax_percent}%):`, totalsX, y, { align: 'left' });
-    doc.text(formatINR(invoice.tax_amount), valuesX, y, { align: 'right' });
+    doc.text(formatMoney(invoice.tax_amount), valuesX, y, { align: 'right' });
     y += 6;
   }
 
   if (invoice.discount_amount > 0) {
     doc.text('Discount:', totalsX, y, { align: 'left' });
-    doc.text('-' + formatINR(invoice.discount_amount), valuesX, y, { align: 'right' });
+    doc.text(`- ${formatMoney(invoice.discount_amount)}`, valuesX, y, { align: 'right' });
     y += 6;
   }
 
@@ -270,7 +274,7 @@ export function generateInvoicePDF(
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.text('Total:', totalsX, y + 5, { align: 'left' });
-  doc.text('₹ ' + formatINR(invoice.total_amount), valuesX, y + 5, { align: 'right' });
+  doc.text(formatMoney(invoice.total_amount), valuesX, y + 5, { align: 'right' });
   y += 10;
 
   if (invoice.amount_paid > 0) {
@@ -278,7 +282,7 @@ export function generateInvoicePDF(
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(16, 185, 129);
     doc.text('Amount Paid:', totalsX, y + 2, { align: 'left' });
-    doc.text(formatINR(invoice.amount_paid), valuesX, y + 2, { align: 'right' });
+    doc.text(formatMoney(invoice.amount_paid), valuesX, y + 2, { align: 'right' });
     y += 6;
     doc.setTextColor(0, 0, 0);
   }
@@ -288,7 +292,7 @@ export function generateInvoicePDF(
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(220, 38, 38);
     doc.text('Balance Due:', totalsX, y + 2, { align: 'left' });
-    doc.text('₹ ' + formatINR(invoice.balance_due), valuesX, y + 2, { align: 'right' });
+    doc.text(formatMoney(invoice.balance_due), valuesX, y + 2, { align: 'right' });
     y += 8;
     doc.setTextColor(0, 0, 0);
   }
@@ -373,20 +377,4 @@ export function downloadInvoicePDF(
 ) {
   const doc = generateInvoicePDF(invoice, items, company);
   doc.save(`${invoice.invoice_number}.pdf`);
-}
-
-export function printInvoicePDF(
-  invoice: InvoiceData,
-  items: InvoiceItem[],
-  company: CompanySettings
-) {
-  const doc = generateInvoicePDF(invoice, items, company);
-  const pdfBlob = doc.output('blob');
-  const url = URL.createObjectURL(pdfBlob);
-  const printWindow = window.open(url);
-  if (printWindow) {
-    printWindow.onload = () => {
-      printWindow.print();
-    };
-  }
 }

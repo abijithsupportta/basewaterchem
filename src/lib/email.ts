@@ -113,7 +113,7 @@ export async function sendServiceCompletedEmail(params: {
   if (!params.customerEmail) return;
 
   const amountHtml = params.totalAmount
-    ? `<p><strong>Total Amount:</strong> ₹${params.totalAmount.toLocaleString('en-IN')}</p>`
+    ? `<p><strong>Total Amount:</strong> Rs ${params.totalAmount.toLocaleString('en-IN')}</p>`
     : '';
 
   const nextServiceHtml = params.nextServiceDate

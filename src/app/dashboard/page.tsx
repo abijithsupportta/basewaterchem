@@ -186,6 +186,7 @@ export default function DashboardPage() {
     };
   }, [invoices, services]);
 
+
   const statCards = [
     { title: 'Total Services', value: stats.total, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { title: 'Scheduled', value: stats.scheduled, icon: FileCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
