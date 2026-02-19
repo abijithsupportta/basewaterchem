@@ -38,7 +38,7 @@ export default function InvoicesPage() {
         <div className="flex-1 min-w-[200px]"><SearchBar value={search} onChange={setSearch} placeholder="Search invoices..." /></div>
         <select className="rounded-md border px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All Status</option>
-          <option value="draft">Draft</option>
+          <option value="draft">Due</option>
           <option value="sent">Sent</option>
           <option value="paid">Paid</option>
           <option value="partial">Partial</option>
@@ -66,7 +66,8 @@ export default function InvoicesPage() {
                       {inv.amc_enabled && <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">AMC</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {formatDate(inv.invoice_date)} | Total: {formatCurrency(inv.total_amount)} | Paid: {formatCurrency(inv.amount_paid)} | Due: {formatCurrency(inv.balance_due)}
+                      {formatDate(inv.invoice_date)} | Total: {formatCurrency(inv.total_amount)} | Paid: {formatCurrency(inv.amount_paid)}
+                      {inv.balance_due > 0 && <span className="text-red-600 font-semibold"> | Due: {formatCurrency(inv.balance_due)}</span>}
                     </p>
                   </div>
                   <Badge className={getStatusColor(inv.status)}>{INVOICE_STATUS_LABELS[inv.status as keyof typeof INVOICE_STATUS_LABELS] || inv.status}</Badge>

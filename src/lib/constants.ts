@@ -38,7 +38,7 @@ export const PAYMENT_STATUS_LABELS: Record<string, string> = {
 };
 
 export const INVOICE_STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
+  draft: 'Due',
   sent: 'Sent',
   paid: 'Paid',
   partial: 'Partial',

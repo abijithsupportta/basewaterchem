@@ -85,12 +85,12 @@ export function getStatusColor(status: string): string {
     high: 'bg-orange-100 text-orange-800',
     urgent: 'bg-red-100 text-red-800',
     // Quotation/Invoice
-    draft: 'bg-gray-100 text-gray-800',
+    draft: 'bg-red-100 text-red-800',
     sent: 'bg-blue-100 text-blue-800',
     accepted: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800',
     converted: 'bg-purple-100 text-purple-800',
-    overdue: 'bg-red-100 text-red-800',
+    overdue: 'bg-orange-100 text-orange-800',
   };
   return colors[status] || 'bg-gray-100 text-gray-800';
 }
