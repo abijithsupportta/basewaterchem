@@ -1,8 +1,9 @@
-﻿import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ServiceRepository } from '@/infrastructure/repositories';
 import { serviceSchema } from '@/lib/validators';
 import { apiSuccess, apiPaginated, apiError, parsePagination } from '@/core/api';
+import { canCreateOrEdit, type StaffRole } from '@/lib/authz';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,6 +27,13 @@ export async function POST(request: NextRequest) {
     const repo = new ServiceRepository(supabase);
     const body = await request.json();
     const validated = serviceSchema.parse(body);
+
+    const user = (await supabase.auth.getUser()).data.user;
+    const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
+    if (!canCreateOrEdit(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create services.' }, { status: 403 });
+    }
+
     const data = await repo.create(validated);
     return apiSuccess(data, 201);
   } catch (error) {

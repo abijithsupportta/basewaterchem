@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { InvoiceRepository } from '@/infrastructure/repositories';
 import { apiSuccess, apiError } from '@/core/api';
+import { canDelete } from '@/lib/authz';
 
 export async function DELETE(
   _request: NextRequest,

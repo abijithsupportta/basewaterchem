@@ -17,6 +17,7 @@ import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus }
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
+import { useUserRole } from '@/lib/use-user-role';
 
 interface CompletionItem {
   part_name: string;
@@ -27,6 +28,7 @@ interface CompletionItem {
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const userRole = useUserRole();
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
@@ -373,6 +375,14 @@ export default function ServiceDetailPage() {
           <CardContent className="space-y-2">
             <div className="flex items-center gap-2"><Calendar className="h-4 w-4" /> <span>{formatDate(service.scheduled_date)}</span></div>
             {service.scheduled_time_slot && <div className="flex items-center gap-2"><Clock className="h-4 w-4" /> <span>{service.scheduled_time_slot}</span></div>}
+            {service.assigned_technician_id && (
+              <div className="text-sm text-muted-foreground">
+                Assigned Technician: {service.technician_name || service.assigned_technician_id}
+              </div>
+            )}
+            {!service.assigned_technician_id && userRole !== 'technician' && (
+              <div className="text-sm text-muted-foreground">Technician not assigned</div>
+            )}
             {service.completed_date && <div className="flex items-center gap-2"><CheckCircle className="h-4 w-4 text-green-500" /> <span>Completed: {formatDate(service.completed_date)}</span></div>}
           </CardContent>
         </Card>

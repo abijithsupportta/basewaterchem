@@ -85,6 +85,7 @@ function NewInvoiceContent() {
         balance_due: total,
         amc_enabled: amc_enabled || false,
         amc_period_months: amc_enabled ? amc_period_months : null,
+        created_by_staff_id: 'current-staff-id', // TODO: Replace with real user id
       }).select().single();
       if (error) throw error;
 

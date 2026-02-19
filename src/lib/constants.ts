@@ -60,3 +60,10 @@ export const NAV_ITEMS = [
   { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt' },
   { label: 'Settings', href: '/dashboard/settings', icon: 'Settings' },
 ];
+
+export const STAFF_ROLES = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'technician', label: 'Technician' },
+];

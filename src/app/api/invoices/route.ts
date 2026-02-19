@@ -4,6 +4,7 @@ import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
 import { invoiceSchema } from '@/lib/validators';
 import { apiSuccess, apiError } from '@/core/api';
+import { canCreateOrEdit } from '@/lib/authz';
 
 export async function GET(request: NextRequest) {
   try {
