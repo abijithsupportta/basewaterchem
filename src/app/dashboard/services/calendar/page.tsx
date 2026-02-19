@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, CalendarDays, Wrench, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Wrench, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,13 +15,9 @@ import { createBrowserClient } from '@/lib/supabase/client';
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-interface ServiceDay {
-  date: string;
-  services: any[];
-  amcCount: number;
-  paidCount: number;
-  installationCount: number;
-  totalCount: number;
+interface DayData {
+  scheduled: any[];
+  completed: any[];
 }
 
 export default function CalendarPage() {
@@ -32,39 +28,53 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(today.toISOString().split('T')[0]);
 
-  // Fetch services for the current month
+  // Fetch services for the current month (both scheduled and completed)
   const fetchServices = useCallback(async () => {
     setLoading(true);
     const supabase = createBrowserClient();
     const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
     const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
 
-    const { data } = await supabase
+    // Fetch services scheduled in this month (not completed)
+    const { data: scheduledData } = await supabase
       .from('services')
       .select('*, customer:customers(id, full_name, customer_code, phone, city)')
       .gte('scheduled_date', startDate)
       .lte('scheduled_date', endDate)
+      .neq('status', 'completed')
       .order('scheduled_date', { ascending: true });
 
-    setServices(data || []);
+    // Fetch services completed in this month
+    const { data: completedData } = await supabase
+      .from('services')
+      .select('*, customer:customers(id, full_name, customer_code, phone, city)')
+      .gte('completed_date', `${startDate}T00:00:00`)
+      .lte('completed_date', `${endDate}T23:59:59`)
+      .eq('status', 'completed')
+      .order('completed_date', { ascending: true });
+
+    setServices([...(scheduledData || []), ...(completedData || [])]);
     setLoading(false);
   }, [currentMonth, currentYear]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
-  // Build a map of date -> services
+  // Build a map of date -> { scheduled, completed }
   const dayMap = useMemo(() => {
-    const map: Record<string, ServiceDay> = {};
+    const map: Record<string, DayData> = {};
     for (const svc of services) {
-      const date = svc.scheduled_date;
-      if (!map[date]) {
-        map[date] = { date, services: [], amcCount: 0, paidCount: 0, installationCount: 0, totalCount: 0 };
+      if (svc.status === 'completed') {
+        // Place completed services on the date they were completed
+        const completedDate = svc.completed_date ? svc.completed_date.split('T')[0] : svc.scheduled_date;
+        if (!map[completedDate]) map[completedDate] = { scheduled: [], completed: [] };
+        map[completedDate].completed.push(svc);
+      } else {
+        // Place scheduled/in-progress/assigned services on their scheduled_date
+        const date = svc.scheduled_date;
+        if (!date) continue;
+        if (!map[date]) map[date] = { scheduled: [], completed: [] };
+        map[date].scheduled.push(svc);
       }
-      map[date].services.push(svc);
-      map[date].totalCount++;
-      if (svc.service_type === 'amc_service') map[date].amcCount++;
-      else if (svc.service_type === 'paid_service') map[date].paidCount++;
-      else if (svc.service_type === 'installation') map[date].installationCount++;
     }
     return map;
   }, [services]);
@@ -88,7 +98,9 @@ export default function CalendarPage() {
   };
 
   const todayStr = today.toISOString().split('T')[0];
-  const selectedServices = selectedDate && dayMap[selectedDate] ? dayMap[selectedDate].services : [];
+  const selectedDayData = selectedDate && dayMap[selectedDate] ? dayMap[selectedDate] : null;
+  const selectedScheduled = selectedDayData?.scheduled || [];
+  const selectedCompleted = selectedDayData?.completed || [];
 
   const prevMonth = () => {
     if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
@@ -106,14 +118,12 @@ export default function CalendarPage() {
 
   // Summary for month
   const monthTotals = useMemo(() => {
-    let amc = 0, paid = 0, installation = 0, completed = 0;
+    let scheduled = 0, completed = 0;
     for (const svc of services) {
-      if (svc.service_type === 'amc_service') amc++;
-      else if (svc.service_type === 'paid_service') paid++;
-      else if (svc.service_type === 'installation') installation++;
       if (svc.status === 'completed') completed++;
+      else scheduled++;
     }
-    return { amc, paid, installation, completed, total: services.length };
+    return { scheduled, completed, total: services.length };
   }, [services]);
 
   return (
@@ -130,11 +140,9 @@ export default function CalendarPage() {
       </div>
 
       {/* Month summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-bold">{monthTotals.total}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">AMC</p><p className="text-xl font-bold text-blue-600">{monthTotals.amc}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-bold text-orange-600">{monthTotals.paid}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Installation</p><p className="text-xl font-bold text-purple-600">{monthTotals.installation}</p></CardContent></Card>
+        <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Scheduled</p><p className="text-xl font-bold text-blue-600">{monthTotals.scheduled}</p></CardContent></Card>
         <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">Completed</p><p className="text-xl font-bold text-green-600">{monthTotals.completed}</p></CardContent></Card>
       </div>
 
@@ -187,12 +195,20 @@ export default function CalendarPage() {
                         )}>
                           {day}
                         </span>
-                        {dayData && dayData.totalCount > 0 && (
-                          <div className="mt-1">
-                            <div className="flex items-center justify-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-1">
-                              <Wrench className="h-3 w-3" />
-                              <span>{dayData.totalCount}</span>
-                            </div>
+                        {dayData && (dayData.scheduled.length > 0 || dayData.completed.length > 0) && (
+                          <div className="mt-1 space-y-0.5">
+                            {dayData.scheduled.length > 0 && (
+                              <div className="flex items-center justify-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 rounded px-1 py-0.5">
+                                <Wrench className="h-2.5 w-2.5" />
+                                <span>{dayData.scheduled.length}</span>
+                              </div>
+                            )}
+                            {dayData.completed.length > 0 && (
+                              <div className="flex items-center justify-center gap-1 text-[10px] font-semibold text-green-700 bg-green-50 rounded px-1 py-0.5">
+                                <CheckCircle className="h-2.5 w-2.5" />
+                                <span>{dayData.completed.length}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </button>
@@ -212,51 +228,39 @@ export default function CalendarPage() {
                 <CalendarDays className="h-4 w-4" />
                 {selectedDate ? formatDate(selectedDate) : 'Select a date'}
               </CardTitle>
-              {selectedServices.length > 0 && (
-                <p className="text-sm text-muted-foreground">{selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''}</p>
+              {(selectedScheduled.length > 0 || selectedCompleted.length > 0) && (
+                <p className="text-sm text-muted-foreground">
+                  {selectedScheduled.length} scheduled · {selectedCompleted.length} completed
+                </p>
               )}
             </CardHeader>
             <CardContent>
-              {selectedServices.length === 0 ? (
+              {selectedScheduled.length === 0 && selectedCompleted.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No services on this date</p>
               ) : (
-                <div className="space-y-3">
-                  {selectedServices.map((svc: any) => {
-                    const customer = svc.customer;
-                    return (
-                      <Link
-                        key={svc.id}
-                        href={`/dashboard/services/${svc.id}`}
-                        className="block rounded-lg border p-3 hover:bg-accent/50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{customer?.full_name || 'Unknown'}</p>
-                            <p className="text-xs text-muted-foreground">{customer?.customer_code} {customer?.city ? `· ${customer.city}` : ''}</p>
-                          </div>
-                          <Badge className={cn('shrink-0 ml-2 text-[10px]', getStatusColor(svc.status))}>
-                            {SERVICE_STATUS_LABELS[svc.status as keyof typeof SERVICE_STATUS_LABELS] || svc.status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <Badge variant="outline" className="text-[10px]">
-                            {SERVICE_TYPE_LABELS[svc.service_type as keyof typeof SERVICE_TYPE_LABELS] || svc.service_type}
-                          </Badge>
-                          {svc.scheduled_time_slot && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                              <Clock className="h-2.5 w-2.5" /> {svc.scheduled_time_slot}
-                            </span>
-                          )}
-                          {svc.total_amount > 0 && (
-                            <span className="text-[10px] font-medium ml-auto">{formatCurrency(svc.total_amount)}</span>
-                          )}
-                        </div>
-                        {svc.description && (
-                          <p className="text-xs text-muted-foreground mt-1 truncate">{svc.description}</p>
-                        )}
-                      </Link>
-                    );
-                  })}
+                <div className="space-y-4">
+                  {/* Scheduled services */}
+                  {selectedScheduled.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-1">
+                        <Wrench className="h-3 w-3" /> Scheduled ({selectedScheduled.length})
+                      </p>
+                      <div className="space-y-2">
+                        {selectedScheduled.map((svc: any) => <ServiceCard key={svc.id} svc={svc} />)}
+                      </div>
+                    </div>
+                  )}
+                  {/* Completed services */}
+                  {selectedCompleted.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-2 flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" /> Completed ({selectedCompleted.length})
+                      </p>
+                      <div className="space-y-2">
+                        {selectedCompleted.map((svc: any) => <ServiceCard key={svc.id} svc={svc} />)}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -264,5 +268,41 @@ export default function CalendarPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ServiceCard({ svc }: { svc: any }) {
+  const customer = svc.customer;
+  return (
+    <Link
+      href={`/dashboard/services/${svc.id}`}
+      className="block rounded-lg border p-3 hover:bg-accent/50 transition-colors"
+    >
+      <div className="flex items-start justify-between">
+        <div className="space-y-1 min-w-0">
+          <p className="text-sm font-medium truncate">{customer?.full_name || 'Unknown'}</p>
+          <p className="text-xs text-muted-foreground">{customer?.customer_code} {customer?.city ? `· ${customer.city}` : ''}</p>
+        </div>
+        <Badge className={cn('shrink-0 ml-2 text-[10px]', getStatusColor(svc.status))}>
+          {SERVICE_STATUS_LABELS[svc.status as keyof typeof SERVICE_STATUS_LABELS] || svc.status}
+        </Badge>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        <Badge variant="outline" className="text-[10px]">
+          {SERVICE_TYPE_LABELS[svc.service_type as keyof typeof SERVICE_TYPE_LABELS] || svc.service_type}
+        </Badge>
+        {svc.scheduled_time_slot && (
+          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+            <Clock className="h-2.5 w-2.5" /> {svc.scheduled_time_slot}
+          </span>
+        )}
+        {svc.total_amount > 0 && (
+          <span className="text-[10px] font-medium ml-auto">{formatCurrency(svc.total_amount)}</span>
+        )}
+      </div>
+      {svc.description && (
+        <p className="text-xs text-muted-foreground mt-1 truncate">{svc.description}</p>
+      )}
+    </Link>
   );
 }
