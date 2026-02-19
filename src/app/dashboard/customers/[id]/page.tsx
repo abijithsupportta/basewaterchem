@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin,
-  Wrench, ShieldCheck, Plus, FileText
+  Wrench, ShieldCheck, Plus, FileText, Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,7 @@ export default function CustomerDetailPage() {
   const [services, setServices] = useState<any[]>([]);
   const [amcContracts, setAmcContracts] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,12 +35,21 @@ export default function CustomerDetailPage() {
         supabase.from('customers').select('*').eq('id', id).single(),
         supabase.from('services').select('*').eq('customer_id', id).order('scheduled_date', { ascending: false }).limit(10),
         supabase.from('amc_contracts').select('*').eq('customer_id', id).order('created_at', { ascending: false }),
-        supabase.from('invoices').select('*').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('invoices').select('*, items:invoice_items(*)').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
       ]);
       if (custRes.data) setCustomer(custRes.data);
       if (srvRes.data) setServices(srvRes.data);
       if (amcRes.data) setAmcContracts(amcRes.data);
-      if (invRes.data) setInvoices(invRes.data);
+      if (invRes.data) {
+        setInvoices(invRes.data);
+        // Collect all unique products/items from invoices
+        const allItems = invRes.data.flatMap((inv: any) => (inv.items || []).map((item: any) => ({
+          ...item,
+          invoice_number: inv.invoice_number,
+          invoice_date: inv.invoice_date,
+        })));
+        setInvoiceItems(allItems);
+      }
       setLoading(false);
     };
     fetchAll();
@@ -97,11 +107,51 @@ export default function CustomerDetailPage() {
               {amcContracts.map((amc: any) => (
                 <Link key={amc.id} href={`/dashboard/amc/${amc.id}`} className="block">
                   <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent">
-                    <div><p className="font-medium">{amc.contract_number}</p><p className="text-sm text-muted-foreground">{formatDate(amc.start_date)} → {formatDate(amc.end_date)} | {amc.services_completed}/{amc.total_services_included} services</p></div>
+                    <div>
+                      <p className="font-medium">{amc.contract_number}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Every {amc.service_interval_months} months | {formatCurrency(amc.amount)}
+                      </p>
+                      {amc.status === 'active' && amc.next_service_date && (
+                        <p className="text-sm font-medium text-blue-600">Next AMC: {formatDate(amc.next_service_date)}</p>
+                      )}
+                      {amc.status === 'active' && !amc.next_service_date && (
+                        <p className="text-sm font-medium text-yellow-600">AMC Pending</p>
+                      )}
+                    </div>
                     <Badge className={getStatusColor(amc.status)}>{AMC_STATUS_LABELS[amc.status as keyof typeof AMC_STATUS_LABELS] || amc.status}</Badge>
                   </div>
                 </Link>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Products / Items purchased */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" /> Products &amp; Items ({invoiceItems.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {invoiceItems.length === 0 ? <p className="text-sm text-muted-foreground">No products purchased yet</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b text-left"><th className="pb-2 font-medium">Item</th><th className="pb-2 font-medium">Description</th><th className="pb-2 font-medium text-right">Qty</th><th className="pb-2 font-medium text-right">Price</th><th className="pb-2 font-medium text-right">Total</th><th className="pb-2 font-medium">Invoice</th><th className="pb-2 font-medium">Date</th></tr></thead>
+                <tbody>
+                  {invoiceItems.map((item: any, idx: number) => (
+                    <tr key={item.id || idx} className="border-b">
+                      <td className="py-2 font-medium">{item.item_name || '-'}</td>
+                      <td className="py-2 text-muted-foreground">{item.description}</td>
+                      <td className="py-2 text-right">{item.quantity}</td>
+                      <td className="py-2 text-right">{formatCurrency(item.unit_price)}</td>
+                      <td className="py-2 text-right">{formatCurrency(item.total_price)}</td>
+                      <td className="py-2 text-blue-600">{item.invoice_number}</td>
+                      <td className="py-2 text-muted-foreground">{formatDate(item.invoice_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
@@ -139,7 +189,13 @@ export default function CustomerDetailPage() {
               {invoices.map((inv: any) => (
                 <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`} className="block">
                   <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent">
-                    <div><p className="font-medium">{inv.invoice_number}</p><p className="text-sm text-muted-foreground">{formatDate(inv.invoice_date)} | {formatCurrency(inv.total_amount)}</p></div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{inv.invoice_number}</p>
+                        {inv.amc_enabled && <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">AMC</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{formatDate(inv.invoice_date)} | {formatCurrency(inv.total_amount)} | {inv.items?.length || 0} items</p>
+                    </div>
                     <Badge className={getStatusColor(inv.status)}>{inv.status}</Badge>
                   </div>
                 </Link>
