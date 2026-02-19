@@ -32,7 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_amc_invoice ON amc_contracts(invoice_id);
 -- ============================================
 -- Dashboard stats view (replaces missing view)
 -- ============================================
-CREATE OR REPLACE VIEW dashboard_stats_view AS
+DROP VIEW IF EXISTS dashboard_stats_view;
+CREATE VIEW dashboard_stats_view AS
 SELECT
   (SELECT COUNT(*) FROM customers WHERE is_active = true) AS total_customers,
   (SELECT COUNT(*) FROM amc_contracts WHERE status = 'active') AS active_amc_contracts,
