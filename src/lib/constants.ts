@@ -58,4 +58,5 @@ export const NAV_ITEMS = [
   { label: 'Services', href: '/dashboard/services', icon: 'Wrench' },
   { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays' },
   { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt' },
+  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings' },
 ];

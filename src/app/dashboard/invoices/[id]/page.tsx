@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Loader2, IndianRupee, Trash2 } from 'lucide-react';
+import { ArrowLeft, Printer, Loader2, IndianRupee, Trash2, Download } from 'lucide-react';
+import { downloadInvoicePDF, printInvoicePDF } from '@/lib/invoice-pdf';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +30,7 @@ export default function InvoiceDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [recording, setRecording] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [companySettings, setCompanySettings] = useState<any>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -36,9 +38,11 @@ export default function InvoiceDetailPage() {
     Promise.all([
       supabase.from('invoices').select('*, customer:customers(*)').eq('id', id).single(),
       supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
-    ]).then(([invRes, iRes]) => {
+      fetch('/api/settings').then(r => r.json()),
+    ]).then(([invRes, iRes, settings]) => {
       if (invRes.data) { setInvoice(invRes.data); setPaymentAmount(invRes.data.balance_due); }
       if (iRes.data) setItems(iRes.data);
+      if (settings) setCompanySettings(settings);
       setLoading(false);
     });
   }, [id]);
@@ -76,6 +80,26 @@ export default function InvoiceDetailPage() {
     } finally {
       setRecording(false);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!invoice || !companySettings) return;
+    const customer = invoice.customer as any;
+    downloadInvoicePDF(
+      { ...invoice, customer: { full_name: customer?.full_name, phone: customer?.phone, email: customer?.email, address_line1: customer?.address_line1, city: customer?.city, state: customer?.state, pincode: customer?.pincode, customer_code: customer?.customer_code } },
+      items,
+      companySettings
+    );
+  };
+
+  const handlePrintInvoice = () => {
+    if (!invoice || !companySettings) return;
+    const customer = invoice.customer as any;
+    printInvoicePDF(
+      { ...invoice, customer: { full_name: customer?.full_name, phone: customer?.phone, email: customer?.email, address_line1: customer?.address_line1, city: customer?.city, state: customer?.state, pincode: customer?.pincode, customer_code: customer?.customer_code } },
+      items,
+      companySettings
+    );
   };
 
   const handleDelete = async () => {
@@ -132,7 +156,8 @@ export default function InvoiceDetailPage() {
           {invoice.status !== 'paid' && (
             <Button onClick={() => { setPaymentAmount(invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0))); setShowPayment(true); }}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
           )}
-          <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print</Button>
+          <Button variant="outline" onClick={handleDownloadPDF}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
+          <Button variant="outline" onClick={handlePrintInvoice}><Printer className="mr-2 h-4 w-4" /> Print</Button>
           <Button variant="destructive" onClick={handleDelete} disabled={deleting}>{deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />} Delete</Button>
         </div>
       </div>

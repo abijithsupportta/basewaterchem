@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Wrench, FileCheck,
-  Receipt, Droplets, LogOut, ChevronLeft, CalendarDays,
+  Receipt, Droplets, LogOut, ChevronLeft, CalendarDays, Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays,
+  LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays, Settings,
 };
 
 export function Sidebar() {
