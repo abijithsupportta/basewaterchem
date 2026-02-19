@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Wrench, FileCheck,
-  Receipt, Droplets, LogOut, ChevronLeft,
+  Receipt, Droplets, LogOut, ChevronLeft, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  LayoutDashboard, Users, Wrench, FileCheck, Receipt,
+  LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays,
 };
 
 export function Sidebar() {
@@ -49,7 +49,9 @@ export function Sidebar() {
             const isActive =
               item.href === '/dashboard'
                 ? pathname === '/dashboard'
-                : pathname.startsWith(item.href);
+                : item.href === '/dashboard/services'
+                  ? pathname === '/dashboard/services' || (pathname.startsWith('/dashboard/services') && !pathname.startsWith('/dashboard/services/calendar'))
+                  : pathname.startsWith(item.href);
 
             return (
               <li key={item.href}>

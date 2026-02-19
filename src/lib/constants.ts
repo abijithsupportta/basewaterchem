@@ -69,6 +69,7 @@ export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard' },
   { label: 'Customers', href: '/dashboard/customers', icon: 'Users' },
   { label: 'Services', href: '/dashboard/services', icon: 'Wrench' },
+  { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays' },
   { label: 'AMC', href: '/dashboard/amc', icon: 'FileCheck' },
   { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt' },
 ];
