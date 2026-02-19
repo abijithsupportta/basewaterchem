@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2, Plus, Trash2, Trash } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +29,7 @@ export default function ServiceDetailPage() {
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
 
   // Completion form state
@@ -162,6 +163,24 @@ export default function ServiceDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to permanently delete this service record? This action cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/services/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      toast.success('Service deleted permanently.');
+      router.push('/dashboard/services');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <Loading />;
   if (!service) {
     return (
@@ -190,6 +209,10 @@ export default function ServiceDetailPage() {
         <div className="flex gap-2">
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}
           {(service.status === 'in_progress' || service.status === 'assigned') && <Button onClick={() => setShowCompleteForm(true)}><CheckCircle className="mr-2 h-4 w-4" /> Complete</Button>}
+          <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash className="mr-2 h-4 w-4" />}
+            Delete
+          </Button>
         </div>
       </div>
 

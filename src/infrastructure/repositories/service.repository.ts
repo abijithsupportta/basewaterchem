@@ -112,4 +112,13 @@ export class ServiceRepository {
     if (!data) throw new NotFoundError('Service', id);
     return data as Service;
   }
+
+  async delete(id: string): Promise<void> {
+    const { error } = await this.db
+      .from('services')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new DatabaseError(error.message);
+  }
 }
