@@ -1,7 +1,6 @@
 /**
- * DEPRECATED: Use src/shared/utils instead
- * This file is kept for backward compatibility during migration
- * All utilities have been moved to src/shared/utils/format.ts
+ * Shared Utils Index
+ * Export all reusable utility functions
  */
 
 export {
@@ -23,4 +22,4 @@ export {
   throttle,
   isEmpty,
   deepClone,
-} from '@/shared/utils/format';
+} from './format';
