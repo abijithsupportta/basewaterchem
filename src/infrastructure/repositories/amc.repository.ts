@@ -76,4 +76,19 @@ export class AmcRepository {
     if (error) throw new DatabaseError(error.message);
     return data as AmcContract | null;
   }
+
+  async delete(id: string): Promise<void> {
+    // Cancel any linked services first
+    await this.db
+      .from('services')
+      .delete()
+      .eq('amc_contract_id', id);
+
+    const { error } = await this.db
+      .from('amc_contracts')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new DatabaseError(error.message);
+  }
 }

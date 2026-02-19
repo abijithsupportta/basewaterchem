@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Loader2, XCircle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, XCircle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,7 @@ export default function AMCDetailPage() {
   const [loading, setLoading] = useState(true);
   const [renewing, setRenewing] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -105,6 +106,24 @@ export default function AMCDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to permanently delete this AMC contract and all its services? This action cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/amc/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      toast.success('AMC contract deleted permanently.');
+      router.push('/dashboard/amc');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <Loading />;
   if (!contract) {
     return (
@@ -148,6 +167,10 @@ export default function AMCDetailPage() {
               Renew Contract
             </Button>
           )}
+          <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+            {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            Delete
+          </Button>
         </div>
       </div>
 
