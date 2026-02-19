@@ -27,17 +27,8 @@ export async function DELETE(
         .delete()
         .in('amc_contract_id', contractIds);
       if (svcError) throw svcError;
-    }
 
-    // Delete services directly linked to this invoice
-    const { error: directSvcError } = await supabase
-      .from('services')
-      .delete()
-      .eq('invoice_id', id);
-    if (directSvcError) throw directSvcError;
-
-    // Delete the AMC contracts themselves
-    if (contractIds.length > 0) {
+      // Delete the AMC contracts themselves
       const { error: amcError } = await supabase
         .from('amc_contracts')
         .delete()

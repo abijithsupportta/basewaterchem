@@ -18,6 +18,7 @@ import { serviceSchema } from '@/lib/validators';
 import { useCustomers } from '@/hooks/use-customers';
 import { TIME_SLOTS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { notifyCustomer } from '@/lib/notify-client';
 import type { ServiceFormData } from '@/types';
 
 export default function NewServicePage() {
@@ -54,8 +55,22 @@ function NewServicePageContent() {
   const onSubmit = async (data: ServiceFormData) => {
     try {
       const supabase = createBrowserClient();
-      const { error } = await supabase.from('services').insert(data);
+      const { data: newService, error } = await supabase.from('services').insert(data).select('service_number').single();
       if (error) throw error;
+
+      // Send email notification to customer
+      const selectedCustomer = customers.find((c) => c.id === data.customer_id);
+      if (selectedCustomer?.email) {
+        notifyCustomer('service_scheduled', {
+          customerEmail: selectedCustomer.email,
+          customerName: selectedCustomer.full_name,
+          serviceNumber: newService?.service_number || 'New Service',
+          serviceType: data.service_type === 'amc_service' ? 'Recurring Service' : data.service_type === 'installation' ? 'Installation' : 'Paid Service',
+          scheduledDate: data.scheduled_date,
+          description: data.description || '',
+        });
+      }
+
       toast.success('Service created successfully!');
       router.push('/dashboard/services');
     } catch (error: any) {

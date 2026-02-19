@@ -84,7 +84,8 @@ export default function InvoiceDetailPage() {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'Failed to delete invoice');
+        const msg = typeof err.error === 'string' ? err.error : err.error?.message || 'Failed to delete invoice';
+        throw new Error(msg);
       }
       toast.success('Invoice deleted permanently');
       router.push('/dashboard/invoices');
