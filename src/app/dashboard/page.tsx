@@ -5,6 +5,8 @@ import Link from 'next/link';
 import {
   Users, Wrench, Clock, Calendar, CreditCard, IndianRupee,
   AlertCircle, ArrowRight, Phone, MapPin, FileCheck,
+  Banknote, Smartphone, Building2, Receipt, CircleDollarSign,
+  TrendingUp, CircleCheck, CircleDashed, CircleAlert,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -62,6 +64,7 @@ export default function DashboardPage() {
   const [pendingServices, setPendingServices] = useState<any[]>([]);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [pendingPayments, setPendingPayments] = useState(0);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const dateRange = useMemo(() => {
@@ -98,23 +101,33 @@ export default function DashboardPage() {
       .from('customers')
       .select('id', { count: 'exact', head: true });
 
-    // Pending invoice payments
-    const invQuery = supabase
+    // Pending invoice payments count
+    const invCountQuery = supabase
       .from('invoices')
       .select('id', { count: 'exact', head: true })
       .in('status', ['sent', 'partial', 'overdue']);
 
-    const [srvRes, pendRes, custRes, invRes] = await Promise.all([
+    // All invoices (for payment analytics, filtered by invoice_date)
+    let invDataQuery = supabase
+      .from('invoices')
+      .select('id, invoice_number, status, total_amount, amount_paid, balance_due, payment_method, payment_date, invoice_date, customer:customers(full_name)');
+
+    if (dateRange.from) invDataQuery = invDataQuery.gte('invoice_date', dateRange.from);
+    if (dateRange.to) invDataQuery = invDataQuery.lte('invoice_date', dateRange.to);
+
+    const [srvRes, pendRes, custRes, invCountRes, invDataRes] = await Promise.all([
       srvQuery,
       pendingQuery,
       custQuery,
-      invQuery,
+      invCountQuery,
+      invDataQuery,
     ]);
 
     setServices(srvRes.data || []);
     setPendingServices(pendRes.data || []);
     setTotalCustomers(custRes.count || 0);
-    setPendingPayments(invRes.count || 0);
+    setPendingPayments(invCountRes.count || 0);
+    setInvoices(invDataRes.data || []);
     setLoading(false);
   }, [dateRange]);
 
@@ -132,6 +145,46 @@ export default function DashboardPage() {
 
     return { total, scheduled, inProgress, completed, revenue };
   }, [services]);
+
+  // Payment analytics from invoices
+  const paymentStats = useMemo(() => {
+    const totalInvoiced = invoices.reduce((s: number, i: any) => s + (i.total_amount || 0), 0);
+    const totalCollected = invoices.reduce((s: number, i: any) => s + (i.amount_paid || 0), 0);
+    const totalPending = invoices.reduce((s: number, i: any) => s + (i.balance_due || 0), 0);
+
+    // By payment method
+    const byMethod: Record<string, number> = { cash: 0, upi: 0, bank_transfer: 0, cheque: 0, card: 0 };
+    invoices.forEach((i: any) => {
+      if (i.amount_paid > 0 && i.payment_method) {
+        const method = i.payment_method.toLowerCase();
+        byMethod[method] = (byMethod[method] || 0) + (i.amount_paid || 0);
+      }
+    });
+    // Unspecified method
+    const methodSum = Object.values(byMethod).reduce((a, b) => a + b, 0);
+    const unspecified = totalCollected - methodSum;
+
+    // Invoice status counts
+    const fullyPaid = invoices.filter((i: any) => i.status === 'paid').length;
+    const partialPaid = invoices.filter((i: any) => i.status === 'partial').length;
+    const unpaid = invoices.filter((i: any) => ['draft', 'sent', 'overdue'].includes(i.status)).length;
+
+    // Service payment breakdown
+    const srvPaid = services.filter((s: any) => s.payment_status === 'paid');
+    const srvPartial = services.filter((s: any) => s.payment_status === 'partial');
+    const srvPending = services.filter((s: any) => s.payment_status === 'pending');
+    const srvPaidAmt = srvPaid.reduce((s: number, sv: any) => s + (sv.total_amount || 0), 0);
+    const srvPartialAmt = srvPartial.reduce((s: number, sv: any) => s + (sv.total_amount || 0), 0);
+    const srvPendingAmt = srvPending.reduce((s: number, sv: any) => s + (sv.total_amount || 0), 0);
+
+    return {
+      totalInvoiced, totalCollected, totalPending,
+      byMethod, unspecified,
+      fullyPaid, partialPaid, unpaid,
+      srvPaid: srvPaid.length, srvPartial: srvPartial.length, srvPending: srvPending.length,
+      srvPaidAmt, srvPartialAmt, srvPendingAmt,
+    };
+  }, [invoices, services]);
 
   const statCards = [
     { title: 'Total Services', value: stats.total, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -195,6 +248,146 @@ export default function DashboardPage() {
             </Card>
           );
         })}
+      </div>
+
+      {/* ─── Payment Collection Section ─── */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <CircleDollarSign className="h-5 w-5 text-emerald-600" />
+          Payment Collection
+        </h2>
+
+        {/* Collection Summary Cards */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card className="border-emerald-200 bg-emerald-50/30">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="rounded-lg p-2 bg-emerald-100"><TrendingUp className="h-4 w-4 text-emerald-700" /></div>
+                <p className="text-xs font-medium text-muted-foreground">Total Invoiced</p>
+              </div>
+              <p className="text-2xl font-bold text-emerald-800">{loading ? '...' : formatCurrency(paymentStats.totalInvoiced)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{invoices.length} invoices</p>
+            </CardContent>
+          </Card>
+          <Card className="border-green-200 bg-green-50/30">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="rounded-lg p-2 bg-green-100"><IndianRupee className="h-4 w-4 text-green-700" /></div>
+                <p className="text-xs font-medium text-muted-foreground">Total Collected</p>
+              </div>
+              <p className="text-2xl font-bold text-green-700">{loading ? '...' : formatCurrency(paymentStats.totalCollected)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{paymentStats.fullyPaid} fully paid, {paymentStats.partialPaid} partial</p>
+            </CardContent>
+          </Card>
+          <Card className="border-red-200 bg-red-50/30">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="rounded-lg p-2 bg-red-100"><AlertCircle className="h-4 w-4 text-red-600" /></div>
+                <p className="text-xs font-medium text-muted-foreground">Pending to Collect</p>
+              </div>
+              <p className="text-2xl font-bold text-red-600">{loading ? '...' : formatCurrency(paymentStats.totalPending)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{paymentStats.unpaid} unpaid, {paymentStats.partialPaid} partial</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Payment Method Breakdown + Invoice/Service Status */}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* By Payment Method */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-blue-600" />
+                Collection by Payment Method
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? <Loading /> : (
+                <div className="space-y-3">
+                  {[
+                    { key: 'cash', label: 'Cash', icon: Banknote, color: 'bg-green-500', textColor: 'text-green-700' },
+                    { key: 'upi', label: 'UPI', icon: Smartphone, color: 'bg-purple-500', textColor: 'text-purple-700' },
+                    { key: 'bank_transfer', label: 'Bank Transfer', icon: Building2, color: 'bg-blue-500', textColor: 'text-blue-700' },
+                    { key: 'cheque', label: 'Cheque', icon: Receipt, color: 'bg-amber-500', textColor: 'text-amber-700' },
+                    { key: 'card', label: 'Card', icon: CreditCard, color: 'bg-indigo-500', textColor: 'text-indigo-700' },
+                  ].map(({ key, label, icon: Icon, color, textColor }) => {
+                    const amt = paymentStats.byMethod[key] || 0;
+                    const pct = paymentStats.totalCollected > 0 ? (amt / paymentStats.totalCollected) * 100 : 0;
+                    return (
+                      <div key={key} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <Icon className={`h-4 w-4 ${textColor}`} />
+                            {label}
+                          </span>
+                          <span className="font-semibold">{formatCurrency(amt)}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-muted">
+                          <div className={`h-2 rounded-full ${color} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {paymentStats.unspecified > 0 && (
+                    <div className="flex items-center justify-between text-sm border-t pt-2">
+                      <span className="text-muted-foreground">Other / Unspecified</span>
+                      <span className="font-semibold">{formatCurrency(paymentStats.unspecified)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm border-t pt-2 font-bold">
+                    <span>Total Collected</span>
+                    <span className="text-green-700">{formatCurrency(paymentStats.totalCollected)}</span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Invoice & Service Payment Status */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Payment Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Invoice breakdown */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">INVOICES</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-green-50/50">
+                    <div className="flex items-center gap-2"><CircleCheck className="h-4 w-4 text-green-600" /><span className="text-sm">Fully Paid</span></div>
+                    <span className="text-sm font-bold text-green-700">{paymentStats.fullyPaid}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-amber-50/50">
+                    <div className="flex items-center gap-2"><CircleDashed className="h-4 w-4 text-amber-600" /><span className="text-sm">Partially Paid</span></div>
+                    <span className="text-sm font-bold text-amber-700">{paymentStats.partialPaid}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-red-50/50">
+                    <div className="flex items-center gap-2"><CircleAlert className="h-4 w-4 text-red-600" /><span className="text-sm">Unpaid / Due</span></div>
+                    <span className="text-sm font-bold text-red-600">{paymentStats.unpaid}</span>
+                  </div>
+                </div>
+              </div>
+              {/* Service breakdown */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">SERVICES</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-green-50/50">
+                    <div className="flex items-center gap-2"><CircleCheck className="h-4 w-4 text-green-600" /><span className="text-sm">Paid ({paymentStats.srvPaid})</span></div>
+                    <span className="text-sm font-bold text-green-700">{formatCurrency(paymentStats.srvPaidAmt)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-amber-50/50">
+                    <div className="flex items-center gap-2"><CircleDashed className="h-4 w-4 text-amber-600" /><span className="text-sm">Partial ({paymentStats.srvPartial})</span></div>
+                    <span className="text-sm font-bold text-amber-700">{formatCurrency(paymentStats.srvPartialAmt)}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3 bg-red-50/50">
+                    <div className="flex items-center gap-2"><CircleAlert className="h-4 w-4 text-red-600" /><span className="text-sm">Pending ({paymentStats.srvPending})</span></div>
+                    <span className="text-sm font-bold text-red-600">{formatCurrency(paymentStats.srvPendingAmt)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Pending / Overdue Services */}
