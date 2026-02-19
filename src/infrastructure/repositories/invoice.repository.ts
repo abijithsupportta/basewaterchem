@@ -67,4 +67,20 @@ export class InvoiceRepository {
     if (!updated) throw new NotFoundError('Invoice', id);
     return updated as Invoice;
   }
+
+  async delete(id: string): Promise<void> {
+    // Delete invoice items first (child rows)
+    const { error: itemsError } = await this.db
+      .from('invoice_items')
+      .delete()
+      .eq('invoice_id', id);
+    if (itemsError) throw new DatabaseError(itemsError.message);
+
+    // Delete the invoice
+    const { error } = await this.db
+      .from('invoices')
+      .delete()
+      .eq('id', id);
+    if (error) throw new DatabaseError(error.message);
+  }
 }
