@@ -12,12 +12,38 @@ export async function DELETE(
     const supabase = await createServerSupabaseClient();
     const repo = new InvoiceRepository(supabase);
 
-    // Detach any linked AMC contracts before deleting
-    const { error: amcError } = await supabase
+    // Find AMC contracts linked to this invoice
+    const { data: contracts } = await supabase
       .from('amc_contracts')
-      .update({ invoice_id: null })
+      .select('id')
       .eq('invoice_id', id);
-    if (amcError) throw amcError;
+
+    const contractIds = (contracts || []).map((c: { id: string }) => c.id);
+
+    // Delete services linked to these AMC contracts
+    if (contractIds.length > 0) {
+      const { error: svcError } = await supabase
+        .from('services')
+        .delete()
+        .in('amc_contract_id', contractIds);
+      if (svcError) throw svcError;
+    }
+
+    // Delete services directly linked to this invoice
+    const { error: directSvcError } = await supabase
+      .from('services')
+      .delete()
+      .eq('invoice_id', id);
+    if (directSvcError) throw directSvcError;
+
+    // Delete the AMC contracts themselves
+    if (contractIds.length > 0) {
+      const { error: amcError } = await supabase
+        .from('amc_contracts')
+        .delete()
+        .in('id', contractIds);
+      if (amcError) throw amcError;
+    }
 
     await repo.delete(id);
     return apiSuccess({ deleted: true });

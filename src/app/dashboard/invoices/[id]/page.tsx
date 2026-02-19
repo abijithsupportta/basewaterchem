@@ -78,7 +78,7 @@ export default function InvoiceDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to permanently delete this invoice? This action cannot be undone.')) return;
+    if (!confirm('Are you sure you want to permanently delete this invoice? All related services and recurring contracts will also be deleted. This action cannot be undone.')) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
