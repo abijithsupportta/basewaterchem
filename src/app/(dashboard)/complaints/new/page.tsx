@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,6 +19,14 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import type { ComplaintFormData } from '@/types';
 
 export default function NewComplaintPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <NewComplaintPageContent />
+    </Suspense>
+  );
+}
+
+function NewComplaintPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedCustomer = searchParams.get('customer');

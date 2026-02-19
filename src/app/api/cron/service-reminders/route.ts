@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   try {
     // Generate upcoming services from AMC contracts
