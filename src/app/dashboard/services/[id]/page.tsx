@@ -106,32 +106,46 @@ export default function ServiceDetailPage() {
           .single();
 
         if (amcData && amcData.status === 'active') {
-          const completedDate = new Date();
-          const nextDate = new Date(completedDate);
-          nextDate.setMonth(nextDate.getMonth() + (amcData.service_interval_months || 3));
-          const nextDateStr = nextDate.toISOString().split('T')[0];
+          // Check if a scheduled/assigned service already exists for this AMC (prevent duplicates)
+          const { data: existingServices } = await supabase.from('services')
+            .select('id')
+            .eq('amc_contract_id', service.amc_contract_id)
+            .in('status', ['scheduled', 'assigned'])
+            .neq('id', id);
 
-          // Update AMC contract: increment services_completed, set next_service_date, extend end_date
-          await supabase.from('amc_contracts').update({
-            services_completed: (amcData.services_completed || 0) + 1,
-            total_services_included: (amcData.total_services_included || 0) + 1,
-            next_service_date: nextDateStr,
-            end_date: nextDateStr,
-          }).eq('id', service.amc_contract_id);
+          if (!existingServices || existingServices.length === 0) {
+            const completedDate = new Date();
+            const nextDate = new Date(completedDate);
+            nextDate.setMonth(nextDate.getMonth() + (amcData.service_interval_months || 3));
+            const nextDateStr = nextDate.toISOString().split('T')[0];
 
-          // Create the next scheduled AMC service
-          await supabase.from('services').insert({
-            customer_id: service.customer_id,
-            amc_contract_id: service.amc_contract_id,
-            service_type: 'amc_service',
-            status: 'scheduled',
-            scheduled_date: nextDateStr,
-            description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
-            is_under_amc: true,
-            payment_status: 'not_applicable',
-          });
+            // Update AMC contract: increment services_completed, set next_service_date, extend end_date
+            await supabase.from('amc_contracts').update({
+              services_completed: (amcData.services_completed || 0) + 1,
+              next_service_date: nextDateStr,
+              end_date: nextDateStr,
+            }).eq('id', service.amc_contract_id);
 
-          toast.success(`Service completed! Next AMC scheduled for ${nextDateStr}`);
+            // Create the next scheduled AMC service
+            await supabase.from('services').insert({
+              customer_id: service.customer_id,
+              amc_contract_id: service.amc_contract_id,
+              service_type: 'amc_service',
+              status: 'scheduled',
+              scheduled_date: nextDateStr,
+              description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
+              is_under_amc: true,
+              payment_status: 'not_applicable',
+            });
+
+            toast.success(`Service completed! Next AMC scheduled for ${nextDateStr}`);
+          } else {
+            // Just update services_completed count
+            await supabase.from('amc_contracts').update({
+              services_completed: (amcData.services_completed || 0) + 1,
+            }).eq('id', service.amc_contract_id);
+            toast.success('Service completed!');
+          }
         } else {
           toast.success('Service completed!');
         }
