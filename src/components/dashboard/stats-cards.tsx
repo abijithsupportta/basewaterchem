@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Users, FileCheck, Wrench, Clock,
-  Calendar, CreditCard, TrendingUp, IndianRupee
+  Calendar, CreditCard, IndianRupee
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { DashboardRepository } from '@/infrastructure/repositories';
@@ -46,12 +46,10 @@ export function StatsCards() {
 
   const cards = [
     { title: 'Total Customers', value: stats.total_customers, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Active AMC', value: stats.active_amc_contracts, icon: FileCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { title: 'AMC This Month', value: stats.amc_services_this_month, icon: Calendar, color: 'text-green-600', bg: 'bg-green-50' },
-    { title: 'AMC This Week', value: stats.amc_services_this_week, icon: TrendingUp, color: 'text-cyan-600', bg: 'bg-cyan-50' },
     { title: "Today's Services", value: stats.todays_services, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { title: 'This Week', value: stats.this_week_services, icon: Calendar, color: 'text-green-600', bg: 'bg-green-50' },
+    { title: 'Scheduled Services', value: stats.active_amc_contracts, icon: FileCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
     { title: 'Overdue Services', value: stats.overdue_services, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
-    { title: 'AMC Expiring', value: stats.amc_expiring_soon, icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
     { title: 'Revenue This Month', value: formatCurrency(stats.revenue_this_month), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
     { title: 'Pending Payments', value: stats.pending_payments, icon: CreditCard, color: 'text-rose-600', bg: 'bg-rose-50' },
   ];
