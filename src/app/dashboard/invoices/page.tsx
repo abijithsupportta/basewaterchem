@@ -11,19 +11,19 @@ import { Loading } from '@/components/ui/loading';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { useInvoices } from '@/hooks/use-invoices';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
-import { PAYMENT_STATUS_LABELS } from '@/lib/constants';
+import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 
 export default function InvoicesPage() {
   const { invoices, loading } = useInvoices();
   const [search, setSearch] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const filtered = invoices.filter((inv: any) => {
     const matchesSearch = !search ||
       inv.invoice_number?.toLowerCase().includes(search.toLowerCase()) ||
       (inv.customer as any)?.full_name?.toLowerCase().includes(search.toLowerCase());
-    const matchesPayment = paymentFilter === 'all' || inv.payment_status === paymentFilter;
-    return matchesSearch && matchesPayment;
+    const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
   return (
@@ -36,11 +36,14 @@ export default function InvoicesPage() {
 
       <div className="flex flex-wrap gap-4">
         <div className="flex-1 min-w-[200px]"><SearchBar value={search} onChange={setSearch} placeholder="Search invoices..." /></div>
-        <select className="rounded-md border px-3 py-2 text-sm" value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
-          <option value="all">All Payment Status</option>
-          <option value="pending">Pending</option>
-          <option value="partial">Partial</option>
+        <select className="rounded-md border px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="all">All Status</option>
+          <option value="draft">Draft</option>
+          <option value="sent">Sent</option>
           <option value="paid">Paid</option>
+          <option value="partial">Partial</option>
+          <option value="overdue">Overdue</option>
+          <option value="cancelled">Cancelled</option>
         </select>
       </div>
 
@@ -60,12 +63,13 @@ export default function InvoicesPage() {
                       <p className="font-medium">{inv.invoice_number}</p>
                       <span className="text-sm text-muted-foreground">•</span>
                       <p className="text-sm">{(inv.customer as any)?.full_name}</p>
+                      {inv.amc_enabled && <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">AMC</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       {formatDate(inv.invoice_date)} | Total: {formatCurrency(inv.total_amount)} | Paid: {formatCurrency(inv.amount_paid)} | Due: {formatCurrency(inv.balance_due)}
                     </p>
                   </div>
-                  <Badge className={getStatusColor(inv.payment_status)}>{PAYMENT_STATUS_LABELS[inv.payment_status as keyof typeof PAYMENT_STATUS_LABELS] || inv.payment_status}</Badge>
+                  <Badge className={getStatusColor(inv.status)}>{INVOICE_STATUS_LABELS[inv.status as keyof typeof INVOICE_STATUS_LABELS] || inv.status}</Badge>
                 </CardContent>
               </Card>
             </Link>

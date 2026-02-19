@@ -5,20 +5,13 @@ import type { Service, ServiceWithDetails, ServiceFormData, ServiceCompleteData 
 const SERVICE_LIST_SELECT = `
   *,
   customer:customers (id, full_name, phone, customer_code, address_line1, city),
-  customer_product:customer_products (
-    id, serial_number,
-    product:products (id, name, brand, model)
-  ),
-  technician:staff!services_assigned_technician_id_fkey (id, full_name, phone)
+  amc_contract:amc_contracts (id, contract_number, status)
 `;
 
 const SERVICE_DETAIL_SELECT = `
   *,
   customer:customers (*),
-  customer_product:customer_products (*, product:products (*)),
-  technician:staff!services_assigned_technician_id_fkey (*),
-  amc_contract:amc_contracts (*),
-  complaint:complaints (*)
+  amc_contract:amc_contracts (*)
 `;
 
 export class ServiceRepository {
@@ -27,7 +20,6 @@ export class ServiceRepository {
   async findAll(filters?: {
     status?: string;
     type?: string;
-    technicianId?: string;
     customerId?: string;
     dateFrom?: string;
     dateTo?: string;
@@ -42,7 +34,6 @@ export class ServiceRepository {
 
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.type) query = query.eq('service_type', filters.type);
-    if (filters?.technicianId) query = query.eq('assigned_technician_id', filters.technicianId);
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
     if (filters?.dateFrom) query = query.gte('scheduled_date', filters.dateFrom);
     if (filters?.dateTo) query = query.lte('scheduled_date', filters.dateTo);
@@ -87,10 +78,7 @@ export class ServiceRepository {
       .select(`
         *,
         customer:customers (id, full_name, phone, customer_code, city),
-        customer_product:customer_products (
-          id,
-          product:products (name, brand)
-        )
+        amc_contract:amc_contracts (id, contract_number)
       `)
       .in('status', ['scheduled', 'assigned', 'rescheduled'])
       .lt('scheduled_date', today)

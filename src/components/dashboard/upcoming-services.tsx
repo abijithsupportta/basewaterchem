@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Calendar, MapPin, Phone, User, ArrowRight } from 'lucide-react';
+import { Calendar, MapPin, Phone, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { ServiceRepository } from '@/infrastructure/repositories';
 import { formatDate, getStatusColor, getServiceTypeLabel } from '@/lib/utils';
@@ -76,14 +76,7 @@ export function UpcomingServices() {
                       </span>
                     </div>
                   </div>
-                  {service.technician ? (
-                    <span className="flex items-center gap-1 text-xs text-green-600">
-                      <User className="h-3 w-3" />
-                      {service.technician.full_name}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-amber-600">Unassigned</span>
-                  )}
+                  <span className="text-xs font-medium text-muted-foreground">{service.service_number}</span>
                 </div>
               </Link>
             ))}

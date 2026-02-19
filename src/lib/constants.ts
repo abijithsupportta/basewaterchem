@@ -6,22 +6,18 @@ export const ROLES = {
   ADMIN: 'admin',
   MANAGER: 'manager',
   STAFF: 'staff',
-  TECHNICIAN: 'technician',
 } as const;
 
 export const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrator',
   manager: 'Manager',
   staff: 'Staff',
-  technician: 'Technician',
 };
 
 export const SERVICE_TYPE_LABELS: Record<string, string> = {
   amc_service: 'AMC Service',
   paid_service: 'Paid Service',
   installation: 'Installation',
-  complaint_service: 'Complaint Service',
-  warranty_service: 'Warranty Service',
 };
 
 export const SERVICE_STATUS_LABELS: Record<string, string> = {
@@ -40,20 +36,13 @@ export const PAYMENT_STATUS_LABELS: Record<string, string> = {
   paid: 'Paid',
 };
 
-export const COMPLAINT_PRIORITY_LABELS: Record<string, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  urgent: 'Urgent',
-};
-
-export const COMPLAINT_STATUS_LABELS: Record<string, string> = {
-  open: 'Open',
-  acknowledged: 'Acknowledged',
-  in_progress: 'In Progress',
-  resolved: 'Resolved',
-  closed: 'Closed',
-  escalated: 'Escalated',
+export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  paid: 'Paid',
+  partial: 'Partial',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
 };
 
 export const AMC_STATUS_LABELS: Record<string, string> = {
@@ -63,15 +52,12 @@ export const AMC_STATUS_LABELS: Record<string, string> = {
   pending_renewal: 'Pending Renewal',
 };
 
-export const PRODUCT_CATEGORY_LABELS: Record<string, string> = {
-  water_purifier: 'Water Purifier',
-  water_filter: 'Water Filter',
-  water_softener: 'Water Softener',
-  spare_part: 'Spare Part',
-  consumable: 'Consumable',
-  accessory: 'Accessory',
-  other: 'Other',
-};
+export const AMC_PERIOD_OPTIONS = [
+  { value: 3, label: '3 Months' },
+  { value: 4, label: '4 Months' },
+  { value: 6, label: '6 Months' },
+  { value: 12, label: '12 Months' },
+];
 
 export const TIME_SLOTS = ['Morning (9-12)', 'Afternoon (12-3)', 'Evening (3-6)'];
 
@@ -80,17 +66,9 @@ export const DEFAULT_TAX_PERCENT = 18; // GST
 export const ITEMS_PER_PAGE = 20;
 
 export const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', roles: ['admin', 'manager', 'staff', 'technician'] },
-  { label: 'Customers', href: '/dashboard/customers', icon: 'Users', roles: ['admin', 'manager', 'staff'] },
-  { label: 'Products', href: '/dashboard/products', icon: 'Package', roles: ['admin', 'manager', 'staff'] },
-  { label: 'Services', href: '/dashboard/services', icon: 'Wrench', roles: ['admin', 'manager', 'staff', 'technician'] },
-  { label: 'AMC', href: '/dashboard/amc', icon: 'FileCheck', roles: ['admin', 'manager', 'staff'] },
-  { label: 'Complaints', href: '/dashboard/complaints', icon: 'AlertTriangle', roles: ['admin', 'manager', 'staff', 'technician'] },
-  { label: 'Quotations', href: '/dashboard/quotations', icon: 'FileText', roles: ['admin', 'manager', 'staff'] },
-  { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt', roles: ['admin', 'manager', 'staff'] },
-  { label: 'Technicians', href: '/dashboard/technicians', icon: 'HardHat', roles: ['admin', 'manager'] },
-  { label: 'Staff', href: '/dashboard/staff', icon: 'UserCog', roles: ['admin'] },
-  { label: 'Reports', href: '/dashboard/reports', icon: 'BarChart3', roles: ['admin', 'manager'] },
-  { label: 'Notifications', href: '/dashboard/notifications', icon: 'Bell', roles: ['admin', 'manager', 'staff', 'technician'] },
-  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['admin'] },
+  { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard' },
+  { label: 'Customers', href: '/dashboard/customers', icon: 'Users' },
+  { label: 'Services', href: '/dashboard/services', icon: 'Wrench' },
+  { label: 'AMC', href: '/dashboard/amc', icon: 'FileCheck' },
+  { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt' },
 ];

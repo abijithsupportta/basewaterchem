@@ -22,7 +22,7 @@ export default function SchedulePage() {
     const supabase = createBrowserClient();
     const { data } = await supabase
       .from('services')
-      .select('*, customer:customers(full_name, customer_code, phone, city), assigned_to_staff:staff(full_name)')
+      .select('*, customer:customers(full_name, customer_code, phone, city)')
       .in('status', ['scheduled', 'assigned'])
       .lt('scheduled_date', new Date().toISOString().split('T')[0])
       .order('scheduled_date', { ascending: true });

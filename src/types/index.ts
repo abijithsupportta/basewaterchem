@@ -1,14 +1,4 @@
-export type { Staff, StaffFormData, UserRole } from './staff';
 export type { Customer, CustomerFormData, CustomerWithProducts } from './customer';
-export type {
-  Product,
-  ProductFormData,
-  ProductCategory,
-  CustomerProduct,
-  CustomerProductFormData,
-  CustomerProductWithProduct,
-  InstallationStatus,
-} from './product';
 export type {
   Service,
   ServiceWithDetails,
@@ -22,21 +12,6 @@ export type {
 } from './service';
 export type { AmcContract, AmcFormData, AmcStatus, AmcContractWithDetails } from './amc';
 export type {
-  Complaint,
-  ComplaintFormData,
-  ComplaintStatus,
-  ComplaintPriority,
-  ComplaintWithDetails,
-} from './complaint';
-export type {
-  Quotation,
-  QuotationFormData,
-  QuotationItem,
-  QuotationItemFormData,
-  QuotationStatus,
-  QuotationWithDetails,
-} from './quotation';
-export type {
   Invoice,
   InvoiceFormData,
   InvoiceItem,
@@ -44,4 +19,17 @@ export type {
   InvoiceStatus,
   InvoiceWithDetails,
 } from './invoice';
-export type { Notification, NotificationType, DashboardStats } from './notification';
+
+// Dashboard stats
+export interface DashboardStats {
+  total_customers: number;
+  active_amc_contracts: number;
+  todays_services: number;
+  overdue_services: number;
+  this_week_services: number;
+  amc_expiring_soon: number;
+  pending_payments: number;
+  amc_services_this_month: number;
+  amc_services_this_week: number;
+  revenue_this_month: number;
+}

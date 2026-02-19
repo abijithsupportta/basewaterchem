@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, User, Calendar, Clock, MapPin, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Calendar, Clock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,18 +11,15 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SimpleSelect } from '@/components/ui/select';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
-import { useStaff } from '@/hooks/use-staff';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { staff: technicians } = useStaff('technician');
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
@@ -34,7 +31,7 @@ export default function ServiceDetailPage() {
     const supabase = createBrowserClient();
     supabase
       .from('services')
-      .select('*, customer:customers(*), assigned_to_staff:staff(full_name, phone), customer_product:customer_products(*, product:products(name))')
+      .select('*, customer:customers(*), amc_contract:amc_contracts(id, contract_number, status)')
       .eq('id', id)
       .single()
       .then(({ data }) => {
@@ -42,14 +39,6 @@ export default function ServiceDetailPage() {
         setLoading(false);
       });
   }, [id]);
-
-  const handleAssignTechnician = async (techId: string) => {
-    const supabase = createBrowserClient();
-    const { error } = await supabase.from('services').update({ assigned_technician_id: techId, status: 'assigned' }).eq('id', id);
-    if (error) { toast.error('Failed to assign'); return; }
-    toast.success('Technician assigned!');
-    setService((s: any) => ({ ...s, assigned_technician_id: techId, status: 'assigned' }));
-  };
 
   const handleStartService = async () => {
     const supabase = createBrowserClient();
@@ -95,7 +84,7 @@ export default function ServiceDetailPage() {
   }
 
   const customer = service.customer as any;
-  const techOptions = technicians.map((t: any) => ({ value: t.id, label: t.full_name }));
+  const amcContract = service.amc_contract as any;
 
   return (
     <div className="space-y-6">
@@ -139,24 +128,18 @@ export default function ServiceDetailPage() {
         </Card>
       </div>
 
-      {/* Technician Assignment */}
-      <Card>
-        <CardHeader><CardTitle className="text-base">Technician</CardTitle></CardHeader>
-        <CardContent>
-          {service.assigned_to_staff ? (
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              <span className="font-medium">{(service.assigned_to_staff as any).full_name}</span>
-              <span className="text-muted-foreground">| {(service.assigned_to_staff as any).phone}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <p className="text-sm text-muted-foreground">Not assigned</p>
-              <SimpleSelect options={techOptions} value="" onChange={handleAssignTechnician} placeholder="Assign technician..." />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* AMC Contract Link */}
+      {amcContract && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">AMC Contract</CardTitle></CardHeader>
+          <CardContent>
+            <Link href={`/dashboard/amc/${amcContract.id}`} className="hover:underline">
+              <p className="font-medium">{amcContract.contract_number}</p>
+              <Badge variant="outline" className={getStatusColor(amcContract.status)}>{amcContract.status}</Badge>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Amount & Payment */}
       <Card>

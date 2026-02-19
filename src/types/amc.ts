@@ -4,7 +4,8 @@ export interface AmcContract {
   id: string;
   contract_number: string | null;
   customer_id: string;
-  customer_product_id: string;
+  customer_product_id: string | null;
+  invoice_id: string | null;
   start_date: string;
   end_date: string;
   service_interval_months: number;
@@ -21,7 +22,8 @@ export interface AmcContract {
 
 export interface AmcFormData {
   customer_id: string;
-  customer_product_id: string;
+  customer_product_id?: string;
+  invoice_id?: string;
   start_date: string;
   end_date: string;
   service_interval_months?: number;
@@ -37,14 +39,9 @@ export interface AmcContractWithDetails extends AmcContract {
     phone: string;
     customer_code: string;
   };
-  customer_product: {
+  invoice?: {
     id: string;
-    serial_number: string | null;
-    product: {
-      id: string;
-      name: string;
-      brand: string | null;
-      model: string | null;
-    };
-  };
+    invoice_number: string;
+    total_amount: number;
+  } | null;
 }

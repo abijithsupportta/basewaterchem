@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Package, Wrench, FileCheck, AlertTriangle,
-  FileText, Receipt, HardHat, UserCog, BarChart3, Bell, Settings,
-  Droplets, LogOut, ChevronLeft,
+  LayoutDashboard, Users, Wrench, FileCheck,
+  Receipt, Droplets, LogOut, ChevronLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
@@ -14,18 +13,13 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  LayoutDashboard, Users, Package, Wrench, FileCheck, AlertTriangle,
-  FileText, Receipt, HardHat, UserCog, BarChart3, Bell, Settings,
+  LayoutDashboard, Users, Wrench, FileCheck, Receipt,
 };
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-
-  const filteredNavItems = NAV_ITEMS.filter((item) =>
-    user ? item.roles.includes(user.role) : false
-  );
 
   return (
     <div
@@ -50,7 +44,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-2">
-          {filteredNavItems.map((item) => {
+          {NAV_ITEMS.map((item) => {
             const Icon = iconMap[item.icon] || LayoutDashboard;
             const isActive =
               item.href === '/dashboard'
@@ -92,8 +86,8 @@ export function Sidebar() {
           <div className="mt-2">
             {!collapsed && (
               <div className="px-3 py-2">
-                <p className="text-sm font-medium truncate">{user.full_name}</p>
-                <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                <p className="text-sm font-medium truncate">{user.email}</p>
+                <p className="text-xs text-muted-foreground capitalize">Admin</p>
               </div>
             )}
             <Button

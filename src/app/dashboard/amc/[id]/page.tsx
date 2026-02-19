@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
-import { AMC_STATUS_LABELS, SERVICE_STATUS_LABELS, SERVICE_TYPE_LABELS } from '@/lib/constants';
+import { AMC_STATUS_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function AMCDetailPage() {
@@ -26,8 +26,8 @@ export default function AMCDetailPage() {
     if (!id) return;
     const supabase = createBrowserClient();
     Promise.all([
-      supabase.from('amc_contracts').select('*, customer:customers(*), product:products(*)').eq('id', id).single(),
-      supabase.from('services').select('*, assigned_to_staff:staff(full_name)').eq('amc_contract_id', id).order('scheduled_date', { ascending: true }),
+      supabase.from('amc_contracts').select('*, customer:customers(*), invoice:invoices(id, invoice_number, total_amount, invoice_date)').eq('id', id).single(),
+      supabase.from('services').select('*').eq('amc_contract_id', id).order('scheduled_date', { ascending: true }),
     ]).then(([amcRes, srvRes]) => {
       if (amcRes.data) setContract(amcRes.data);
       if (srvRes.data) setServices(srvRes.data);
@@ -42,18 +42,31 @@ export default function AMCDetailPage() {
       const newStart = new Date(contract.end_date);
       newStart.setDate(newStart.getDate() + 1);
       const newEnd = new Date(newStart);
-      newEnd.setFullYear(newEnd.getFullYear() + 1);
-      const { error } = await supabase.from('amc_contracts').insert({
+      newEnd.setMonth(newEnd.getMonth() + (contract.service_interval_months || 3));
+
+      const { data: newContract, error } = await supabase.from('amc_contracts').insert({
         customer_id: contract.customer_id,
-        product_id: contract.product_id,
         start_date: newStart.toISOString().split('T')[0],
         end_date: newEnd.toISOString().split('T')[0],
         service_interval_months: contract.service_interval_months,
-        total_services_included: contract.total_services_included,
-        contract_amount: contract.contract_amount,
-      });
+        total_services_included: 1,
+        amount: contract.amount,
+      }).select().single();
       if (error) throw error;
-      toast.success('AMC renewed! New contract created.');
+
+      // Schedule service for renewed AMC
+      await supabase.from('services').insert({
+        customer_id: contract.customer_id,
+        amc_contract_id: newContract.id,
+        service_type: 'amc_service',
+        status: 'scheduled',
+        scheduled_date: newEnd.toISOString().split('T')[0],
+        description: `AMC service - Renewal of ${contract.contract_number}`,
+        is_under_amc: true,
+        payment_status: 'not_applicable',
+      });
+
+      toast.success('AMC renewed! New contract created with scheduled service.');
       router.push('/dashboard/amc');
     } catch (error: any) {
       toast.error(error.message || 'Failed to renew');
@@ -73,7 +86,7 @@ export default function AMCDetailPage() {
   }
 
   const customer = contract.customer as any;
-  const product = contract.product as any;
+  const invoice = contract.invoice as any;
   const isExpired = contract.status === 'expired' || new Date(contract.end_date) < new Date();
 
   return (
@@ -107,26 +120,30 @@ export default function AMCDetailPage() {
             </Link>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">Product</CardTitle></CardHeader>
-          <CardContent>
-            <p className="font-medium">{product?.name}</p>
-            <p className="text-sm text-muted-foreground">{product?.brand} {product?.model_number && `- ${product.model_number}`}</p>
-          </CardContent>
-        </Card>
+        {invoice && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">Linked Invoice</CardTitle></CardHeader>
+            <CardContent>
+              <Link href={`/dashboard/invoices/${invoice.id}`} className="hover:underline">
+                <p className="font-medium">{invoice.invoice_number}</p>
+                <p className="text-sm text-muted-foreground">Date: {formatDate(invoice.invoice_date)} | Amount: {formatCurrency(invoice.total_amount)}</p>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Period</p><p className="font-bold">{formatDate(contract.start_date)} → {formatDate(contract.end_date)}</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Service Interval</p><p className="text-2xl font-bold">{contract.service_interval_months} months</p></CardContent></Card>
         <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Services</p><p className="text-2xl font-bold">{contract.services_completed}/{contract.total_services_included}</p></CardContent></Card>
-        <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Amount</p><p className="text-2xl font-bold">{formatCurrency(contract.contract_amount)}</p></CardContent></Card>
+        <Card><CardContent className="pt-6"><p className="text-sm text-muted-foreground">Amount</p><p className="text-2xl font-bold">{formatCurrency(contract.amount)}</p></CardContent></Card>
       </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Services Under This Contract ({services.length})</CardTitle></CardHeader>
         <CardContent>
-          {services.length === 0 ? <p className="text-sm text-muted-foreground">No services scheduled yet. Use &quot;Generate AMC Schedule&quot; from the Schedule page.</p> : (
+          {services.length === 0 ? <p className="text-sm text-muted-foreground">No services scheduled yet.</p> : (
             <div className="space-y-3">
               {services.map((srv: any) => (
                 <Link key={srv.id} href={`/dashboard/services/${srv.id}`}>
@@ -135,7 +152,6 @@ export default function AMCDetailPage() {
                       <p className="font-medium">{srv.service_number}</p>
                       <p className="text-sm text-muted-foreground">
                         {formatDate(srv.scheduled_date)}
-                        {srv.assigned_to_staff && <> | {(srv.assigned_to_staff as any)?.full_name}</>}
                         {srv.completed_date && <> | Completed: {formatDate(srv.completed_date)}</>}
                       </p>
                     </div>

@@ -10,10 +10,10 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerSupabaseClient();
     const repo = new InvoiceRepository(supabase);
     const { searchParams } = new URL(request.url);
-    const paymentStatus = searchParams.get('payment_status') || undefined;
+    const status = searchParams.get('status') || undefined;
     const customerId = searchParams.get('customer_id') || undefined;
 
-    const data = await repo.findAll({ paymentStatus, customerId });
+    const data = await repo.findAll({ status, customerId });
     return apiSuccess(data);
   } catch (error) {
     return apiError(error);

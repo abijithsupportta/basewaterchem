@@ -1,9 +1,9 @@
+import type { AmcContract } from './amc';
+
 export type ServiceType =
   | 'amc_service'
   | 'paid_service'
-  | 'installation'
-  | 'complaint_service'
-  | 'warranty_service';
+  | 'installation';
 
 export type ServiceStatus =
   | 'scheduled'
@@ -76,19 +76,17 @@ export interface ServiceWithDetails extends Service {
     full_name: string;
     phone?: string;
   } | null;
+  amc_contract?: AmcContract | null;
 }
 
 export interface ServiceFormData {
   customer_id: string;
   customer_product_id?: string;
   amc_contract_id?: string;
-  complaint_id?: string;
   service_type: ServiceType;
   scheduled_date: string;
   scheduled_time_slot?: string;
-  assigned_technician_id?: string;
   description?: string;
-  is_under_warranty?: boolean;
   is_under_amc?: boolean;
 }
 
@@ -110,7 +108,6 @@ export interface UpcomingServiceView {
   scheduled_time_slot: string | null;
   service_type: ServiceType;
   status: ServiceStatus;
-  is_under_warranty: boolean;
   is_under_amc: boolean;
   customer_id: string;
   customer_code: string;
@@ -118,11 +115,6 @@ export interface UpcomingServiceView {
   customer_phone: string;
   customer_address: string;
   customer_city: string;
-  product_name: string;
-  product_brand: string;
-  product_model: string;
-  technician_name: string | null;
-  technician_phone: string | null;
   amc_contract_number: string | null;
   payment_status: PaymentStatus;
 }

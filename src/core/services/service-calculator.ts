@@ -19,17 +19,8 @@ export class ServiceCalculator {
     return {
       ...completeData,
       status: 'completed' as const,
+      completed_date: completeData.completed_date || new Date().toISOString().split('T')[0],
       total_amount: ServiceCalculator.calculateTotal(completeData),
-    };
-  }
-
-  /**
-   * Build the update payload for technician assignment
-   */
-  static buildAssignmentPayload(technicianId: string) {
-    return {
-      assigned_technician_id: technicianId,
-      status: 'assigned' as const,
     };
   }
 }

@@ -11,14 +11,13 @@ const INVOICE_LIST_SELECT = `
 export class InvoiceRepository {
   constructor(private readonly db: SupabaseClient) {}
 
-  async findAll(filters?: { status?: string; paymentStatus?: string; customerId?: string }) {
+  async findAll(filters?: { status?: string; customerId?: string }) {
     let query = this.db
       .from('invoices')
       .select(INVOICE_LIST_SELECT)
       .order('created_at', { ascending: false });
 
     if (filters?.status) query = query.eq('status', filters.status);
-    if (filters?.paymentStatus) query = query.eq('payment_status', filters.paymentStatus);
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
 
     const { data, error } = await query;

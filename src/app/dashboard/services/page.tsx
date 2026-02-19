@@ -60,8 +60,7 @@ export default function ServicesPage() {
           <option value="amc_service">AMC Service</option>
           <option value="paid_service">Paid Service</option>
           <option value="installation">Installation</option>
-          <option value="complaint_service">Complaint Service</option>
-          <option value="warranty_service">Warranty Service</option>
+
         </select>
       </div>
 
@@ -84,7 +83,7 @@ export default function ServicesPage() {
                     <p className="text-sm text-muted-foreground mt-1">
                       {(service.customer as any)?.full_name || 'Unknown Customer'} | 
                       Scheduled: {formatDate(service.scheduled_date)}
-                      {service.assigned_to_staff && <> | Tech: {(service.assigned_to_staff as any)?.full_name}</>}
+
                     </p>
                   </div>
                   <Badge className={getStatusColor(service.status)}>

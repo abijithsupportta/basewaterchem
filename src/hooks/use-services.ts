@@ -4,17 +4,16 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ServiceRepository } from '@/infrastructure/repositories';
 import { ServiceCalculator } from '@/core/services';
-import type { Service, ServiceFormData, ServiceCompleteData, UpcomingServiceView } from '@/types';
+import type { Service, ServiceFormData, ServiceCompleteData, ServiceWithDetails } from '@/types';
 
 export function useServices(filters?: {
   status?: string;
   type?: string;
-  technicianId?: string;
   customerId?: string;
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const [services, setServices] = useState<Service[]>([]);
+  const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +31,7 @@ export function useServices(filters?: {
     } finally {
       setLoading(false);
     }
-  }, [repo, filters?.status, filters?.type, filters?.technicianId, filters?.customerId, filters?.dateFrom, filters?.dateTo]);
+  }, [repo, filters?.status, filters?.type, filters?.customerId, filters?.dateFrom, filters?.dateTo]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
@@ -57,18 +56,11 @@ export function useServices(filters?: {
     return data;
   }, [repo, fetchServices]);
 
-  const assignTechnician = useCallback(async (serviceId: string, technicianId: string) => {
-    const payload = ServiceCalculator.buildAssignmentPayload(technicianId);
-    const data = await repo.update(serviceId, payload);
-    await fetchServices();
-    return data;
-  }, [repo, fetchServices]);
-
-  return { services, loading, error, fetchServices, getService, createService, updateService, completeService, assignTechnician };
+  return { services, loading, error, fetchServices, getService, createService, updateService, completeService };
 }
 
 export function useUpcomingServices() {
-  const [services, setServices] = useState<UpcomingServiceView[]>([]);
+  const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
@@ -77,7 +69,7 @@ export function useUpcomingServices() {
     const fetch = async () => {
       try {
         const data = await repo.findUpcoming(50);
-        setServices(data as unknown as UpcomingServiceView[]);
+        setServices(data);
       } catch (err) {
         console.error('Failed to fetch upcoming services:', err);
       } finally {

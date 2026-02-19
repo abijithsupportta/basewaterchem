@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Plus, ShieldCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ShieldCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchBar } from '@/components/ui/search-bar';
@@ -31,7 +30,7 @@ export default function AMCPage() {
       <Breadcrumb />
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold">AMC Contracts</h1><p className="text-muted-foreground">{contracts.length} contracts</p></div>
-        <Link href="/dashboard/amc/new"><Button><Plus className="mr-2 h-4 w-4" /> New AMC</Button></Link>
+        <p className="text-sm text-muted-foreground">AMC contracts are created from Invoices with AMC enabled</p>
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -40,7 +39,7 @@ export default function AMCPage() {
           <option value="all">All Status</option>
           <option value="active">Active</option>
           <option value="expired">Expired</option>
-          <option value="pending">Pending</option>
+          <option value="pending_renewal">Pending Renewal</option>
           <option value="cancelled">Cancelled</option>
         </select>
       </div>
@@ -48,7 +47,7 @@ export default function AMCPage() {
       {loading ? <Loading /> : filtered.length === 0 ? (
         <Card><CardContent className="flex flex-col items-center justify-center py-12">
           <ShieldCheck className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">{search || statusFilter !== 'all' ? 'No contracts match filters' : 'No AMC contracts yet'}</p>
+          <p className="text-muted-foreground">{search || statusFilter !== 'all' ? 'No contracts match filters' : 'No AMC contracts yet. Create an invoice with AMC enabled.'}</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
@@ -63,10 +62,11 @@ export default function AMCPage() {
                       <p className="text-sm">{(contract.customer as any)?.full_name}</p>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {(contract.product as any)?.name} | {formatDate(contract.start_date)} → {formatDate(contract.end_date)} |
+                      {formatDate(contract.start_date)} → {formatDate(contract.end_date)} |
                       Services: {contract.services_completed}/{contract.total_services_included} |
                       Every {contract.service_interval_months} months |
-                      {formatCurrency(contract.contract_amount)}
+                      {formatCurrency(contract.amount)}
+                      {contract.invoice?.invoice_number && ` | Invoice: ${contract.invoice.invoice_number}`}
                     </p>
                   </div>
                   <Badge className={getStatusColor(contract.status)}>{AMC_STATUS_LABELS[contract.status as keyof typeof AMC_STATUS_LABELS] || contract.status}</Badge>

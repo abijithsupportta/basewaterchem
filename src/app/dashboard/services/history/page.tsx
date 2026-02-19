@@ -22,7 +22,7 @@ export default function ServiceHistoryPage() {
     const supabase = createBrowserClient();
     supabase
       .from('services')
-      .select('*, customer:customers(full_name, customer_code), assigned_to_staff:staff(full_name)')
+      .select('*, customer:customers(full_name, customer_code)')
       .eq('status', 'completed')
       .order('completed_date', { ascending: false })
       .limit(100)
@@ -64,7 +64,6 @@ export default function ServiceHistoryPage() {
                     <p className="text-sm text-muted-foreground">
                       {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | Completed: {formatDate(s.completed_date)}
                       {s.actual_amount > 0 && <> | {formatCurrency(s.actual_amount)}</>}
-                      {s.assigned_to_staff && <> | {(s.assigned_to_staff as any)?.full_name}</>}
                     </p>
                   </div>
                   <Badge variant="default">Completed</Badge>

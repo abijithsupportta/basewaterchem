@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin,
-  Package, Wrench, ShieldCheck, AlertCircle, Plus
+  Wrench, ShieldCheck, Plus, FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,10 +20,9 @@ export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [customer, setCustomer] = useState<any>(null);
-  const [customerProducts, setCustomerProducts] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [amcContracts, setAmcContracts] = useState<any[]>([]);
-  const [complaints, setComplaints] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,18 +30,16 @@ export default function CustomerDetailPage() {
     const supabase = createBrowserClient();
     const fetchAll = async () => {
       setLoading(true);
-      const [custRes, cpRes, srvRes, amcRes, cmpRes] = await Promise.all([
+      const [custRes, srvRes, amcRes, invRes] = await Promise.all([
         supabase.from('customers').select('*').eq('id', id).single(),
-        supabase.from('customer_products').select('*, product:products(*)').eq('customer_id', id),
-        supabase.from('services').select('*, assigned_to_staff:staff(full_name)').eq('customer_id', id).order('scheduled_date', { ascending: false }).limit(10),
-        supabase.from('amc_contracts').select('*, product:products(name)').eq('customer_id', id).order('created_at', { ascending: false }),
-        supabase.from('complaints').select('*').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('services').select('*').eq('customer_id', id).order('scheduled_date', { ascending: false }).limit(10),
+        supabase.from('amc_contracts').select('*').eq('customer_id', id).order('created_at', { ascending: false }),
+        supabase.from('invoices').select('*').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
       ]);
       if (custRes.data) setCustomer(custRes.data);
-      if (cpRes.data) setCustomerProducts(cpRes.data);
       if (srvRes.data) setServices(srvRes.data);
       if (amcRes.data) setAmcContracts(amcRes.data);
-      if (cmpRes.data) setComplaints(cmpRes.data);
+      if (invRes.data) setInvoices(invRes.data);
       setLoading(false);
     };
     fetchAll();
@@ -91,27 +88,8 @@ export default function CustomerDetailPage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" /> Products ({customerProducts.length})</CardTitle>
-          <Link href={`/dashboard/customers/${id}/add-product`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> Add</Button></Link>
-        </CardHeader>
-        <CardContent>
-          {customerProducts.length === 0 ? <p className="text-sm text-muted-foreground">No products installed</p> : (
-            <div className="space-y-3">
-              {customerProducts.map((cp: any) => (
-                <div key={cp.id} className="flex items-center justify-between rounded-lg border p-3">
-                  <div><p className="font-medium">{cp.product?.name || 'Product'}</p><p className="text-sm text-muted-foreground">Installed: {formatDate(cp.installation_date)} | Serial: {cp.serial_number || 'N/A'}</p></div>
-                  <Badge variant={new Date(cp.warranty_end_date) > new Date() ? 'default' : 'secondary'}>{new Date(cp.warranty_end_date) > new Date() ? 'In Warranty' : 'Expired'}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> AMC Contracts ({amcContracts.length})</CardTitle>
-          <Link href={`/dashboard/amc/new?customer=${id}`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> New AMC</Button></Link>
+          <Link href={`/dashboard/invoices/new?customer=${id}`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> New Invoice + AMC</Button></Link>
         </CardHeader>
         <CardContent>
           {amcContracts.length === 0 ? <p className="text-sm text-muted-foreground">No AMC contracts</p> : (
@@ -152,17 +130,17 @@ export default function CustomerDetailPage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2"><AlertCircle className="h-4 w-4" /> Complaints ({complaints.length})</CardTitle>
-          <Link href={`/dashboard/complaints/new?customer=${id}`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> New</Button></Link>
+          <CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Invoices ({invoices.length})</CardTitle>
+          <Link href={`/dashboard/invoices/new?customer=${id}`}><Button size="sm" variant="outline"><Plus className="mr-1 h-3 w-3" /> New</Button></Link>
         </CardHeader>
         <CardContent>
-          {complaints.length === 0 ? <p className="text-sm text-muted-foreground">No complaints</p> : (
+          {invoices.length === 0 ? <p className="text-sm text-muted-foreground">No invoices</p> : (
             <div className="space-y-3">
-              {complaints.map((cmp: any) => (
-                <Link key={cmp.id} href={`/dashboard/complaints/${cmp.id}`} className="block">
+              {invoices.map((inv: any) => (
+                <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`} className="block">
                   <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent">
-                    <div><p className="font-medium">{cmp.complaint_number}</p><p className="text-sm text-muted-foreground">{cmp.subject} | {formatDate(cmp.created_at)}</p></div>
-                    <Badge className={getStatusColor(cmp.status)}>{cmp.status}</Badge>
+                    <div><p className="font-medium">{inv.invoice_number}</p><p className="text-sm text-muted-foreground">{formatDate(inv.invoice_date)} | {formatCurrency(inv.total_amount)}</p></div>
+                    <Badge className={getStatusColor(inv.status)}>{inv.status}</Badge>
                   </div>
                 </Link>
               ))}

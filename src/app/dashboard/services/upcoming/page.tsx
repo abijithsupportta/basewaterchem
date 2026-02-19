@@ -20,7 +20,7 @@ export default function UpcomingServicesPage() {
     const supabase = createBrowserClient();
     supabase
       .from('services')
-      .select('*, customer:customers(full_name, customer_code, phone, city), assigned_to_staff:staff(full_name)')
+      .select('*, customer:customers(full_name, customer_code, phone, city)')
       .in('status', ['scheduled', 'assigned'])
       .gte('scheduled_date', new Date().toISOString().split('T')[0])
       .order('scheduled_date', { ascending: true })
@@ -57,7 +57,6 @@ export default function UpcomingServicesPage() {
                           <p className="text-sm text-muted-foreground">
                             {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
                             {s.scheduled_time_slot && <> | {s.scheduled_time_slot}</>}
-                            {s.assigned_to_staff && <> | {(s.assigned_to_staff as any)?.full_name}</>}
                           </p>
                         </div>
                         <Badge className={getStatusColor(s.status)}>{s.status}</Badge>
@@ -81,7 +80,6 @@ export default function UpcomingServicesPage() {
                           <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
                           <p className="text-sm text-muted-foreground">
                             {formatDate(s.scheduled_date)} | {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
-                            {s.assigned_to_staff && <> | {(s.assigned_to_staff as any)?.full_name}</>}
                           </p>
                         </div>
                         <Badge className={getStatusColor(s.status)}>{s.status}</Badge>

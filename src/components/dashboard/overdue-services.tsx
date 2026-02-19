@@ -69,9 +69,9 @@ export function OverdueServices() {
                         {service.customer?.phone}
                       </span>
                     </div>
-                    {service.customer_product?.product && (
-                      <p className="text-xs text-muted-foreground">
-                        {service.customer_product.product.name}
+                    {service.description && (
+                      <p className="text-xs text-muted-foreground truncate max-w-[300px]">
+                        {service.description}
                       </p>
                     )}
                   </div>

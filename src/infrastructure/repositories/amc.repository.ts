@@ -5,16 +5,13 @@ import type { AmcContract, AmcFormData, AmcContractWithDetails } from '@/types';
 const AMC_LIST_SELECT = `
   *,
   customer:customers (id, full_name, phone, customer_code),
-  customer_product:customer_products (
-    id, serial_number,
-    product:products (id, name, brand, model)
-  )
+  invoice:invoices (id, invoice_number, total_amount)
 `;
 
 const AMC_DETAIL_SELECT = `
   *,
   customer:customers (*),
-  customer_product:customer_products (*, product:products (*))
+  invoice:invoices (id, invoice_number, total_amount, invoice_date)
 `;
 
 export class AmcRepository {
@@ -67,5 +64,16 @@ export class AmcRepository {
     if (error) throw new DatabaseError(error.message);
     if (!data) throw new NotFoundError('AMC Contract', id);
     return data as AmcContract;
+  }
+
+  async findByInvoiceId(invoiceId: string): Promise<AmcContract | null> {
+    const { data, error } = await this.db
+      .from('amc_contracts')
+      .select('*')
+      .eq('invoice_id', invoiceId)
+      .maybeSingle();
+
+    if (error) throw new DatabaseError(error.message);
+    return data as AmcContract | null;
   }
 }

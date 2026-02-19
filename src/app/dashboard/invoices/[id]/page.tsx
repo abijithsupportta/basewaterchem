@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Loader2, IndianRupee } from 'lucide-react';
+import { ArrowLeft, Printer, Loader2, IndianRupee, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { SimpleSelect } from '@/components/ui/select';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
-import { PAYMENT_STATUS_LABELS } from '@/lib/constants';
+import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function InvoiceDetailPage() {
@@ -22,6 +22,7 @@ export default function InvoiceDetailPage() {
   const router = useRouter();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
+  const [amcContract, setAmcContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
@@ -34,9 +35,11 @@ export default function InvoiceDetailPage() {
     Promise.all([
       supabase.from('invoices').select('*, customer:customers(*)').eq('id', id).single(),
       supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
-    ]).then(([invRes, iRes]) => {
+      supabase.from('amc_contracts').select('*, services:services(*)').eq('invoice_id', id).maybeSingle(),
+    ]).then(([invRes, iRes, amcRes]) => {
       if (invRes.data) { setInvoice(invRes.data); setPaymentAmount(invRes.data.balance_due); }
       if (iRes.data) setItems(iRes.data);
+      if (amcRes.data) setAmcContract(amcRes.data);
       setLoading(false);
     });
   }, [id]);
@@ -52,13 +55,13 @@ export default function InvoiceDetailPage() {
       const { error } = await supabase.from('invoices').update({
         amount_paid: newPaid,
         balance_due: Math.max(0, newBalance),
-        payment_status: newStatus,
+        status: newStatus,
         payment_method: paymentMethod,
         payment_date: new Date().toISOString(),
       }).eq('id', id);
       if (error) throw error;
       toast.success('Payment recorded!');
-      setInvoice((inv: any) => ({ ...inv, amount_paid: newPaid, balance_due: Math.max(0, newBalance), payment_status: newStatus }));
+      setInvoice((inv: any) => ({ ...inv, amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus }));
       setShowPayment(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to record payment');
@@ -96,10 +99,11 @@ export default function InvoiceDetailPage() {
             <h1 className="text-2xl font-bold">{invoice.invoice_number}</h1>
             <p className="text-muted-foreground">Invoice Date: {formatDate(invoice.invoice_date)}</p>
           </div>
-          <Badge className={getStatusColor(invoice.payment_status)}>{PAYMENT_STATUS_LABELS[invoice.payment_status as keyof typeof PAYMENT_STATUS_LABELS]}</Badge>
+          <Badge className={getStatusColor(invoice.status)}>{INVOICE_STATUS_LABELS[invoice.status as keyof typeof INVOICE_STATUS_LABELS] || invoice.status}</Badge>
+          {invoice.amc_enabled && <Badge className="bg-blue-100 text-blue-800">AMC</Badge>}
         </div>
         <div className="flex gap-2">
-          {invoice.payment_status !== 'paid' && (
+          {invoice.status !== 'paid' && (
             <Button onClick={() => setShowPayment(true)}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
           )}
           <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print</Button>
@@ -129,15 +133,40 @@ export default function InvoiceDetailPage() {
         </Card>
       </div>
 
+      {/* AMC Contract Info */}
+      {amcContract && (
+        <Card className="border-blue-200">
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><FileCheck className="h-4 w-4 text-blue-600" /> AMC Contract</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div><p className="text-sm text-muted-foreground">Contract #</p><p className="font-medium">{amcContract.contract_number}</p></div>
+              <div><p className="text-sm text-muted-foreground">Period</p><p className="font-medium">{formatDate(amcContract.start_date)} → {formatDate(amcContract.end_date)}</p></div>
+              <div><p className="text-sm text-muted-foreground">Interval</p><p className="font-medium">{amcContract.service_interval_months} months</p></div>
+              <div><p className="text-sm text-muted-foreground">Status</p><Badge className={getStatusColor(amcContract.status)}>{amcContract.status}</Badge></div>
+            </div>
+            {amcContract.services?.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <p className="text-sm font-medium mb-2">Scheduled Services:</p>
+                {amcContract.services.map((srv: any) => (
+                  <Link key={srv.id} href={`/dashboard/services/${srv.id}`} className="block text-sm text-blue-600 hover:underline">
+                    {srv.service_number} - {formatDate(srv.scheduled_date)} ({srv.status})
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">Items</CardTitle></CardHeader>
         <CardContent>
           <table className="w-full text-sm">
-            <thead><tr className="border-b text-left"><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">Description</th><th className="pb-2 font-medium text-right">Qty</th><th className="pb-2 font-medium text-right">Price</th><th className="pb-2 font-medium text-right">Total</th></tr></thead>
+            <thead><tr className="border-b text-left"><th className="pb-2 font-medium">#</th><th className="pb-2 font-medium">Item</th><th className="pb-2 font-medium">Description</th><th className="pb-2 font-medium text-right">Qty</th><th className="pb-2 font-medium text-right">Price</th><th className="pb-2 font-medium text-right">Total</th></tr></thead>
             <tbody>
               {items.map((item, idx) => (
                 <tr key={item.id} className="border-b">
-                  <td className="py-2">{idx + 1}</td><td className="py-2">{item.description}</td><td className="py-2 text-right">{item.quantity}</td><td className="py-2 text-right">{formatCurrency(item.unit_price)}</td><td className="py-2 text-right">{formatCurrency(item.total_price)}</td>
+                  <td className="py-2">{idx + 1}</td><td className="py-2">{item.item_name || '-'}</td><td className="py-2">{item.description}</td><td className="py-2 text-right">{item.quantity}</td><td className="py-2 text-right">{formatCurrency(item.unit_price)}</td><td className="py-2 text-right">{formatCurrency(item.total_price)}</td>
                 </tr>
               ))}
             </tbody>
