@@ -9,8 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
-import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
+import { formatDate, formatCurrency, isFreeServiceActive, getFreeServiceValidUntil } from '@/lib/utils';
+import { SERVICE_TYPE_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function ServiceHistoryPage() {
@@ -60,9 +60,23 @@ export default function ServiceHistoryPage() {
               <Card className="hover:shadow-md transition-shadow">
                 <CardContent className="flex items-center justify-between p-4">
                   <div>
-                    <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                      {isFreeServiceActive(s) && (
+                        <>
+                          <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
+                          {getFreeServiceValidUntil(s) && (
+                            <span className="text-xs text-muted-foreground">
+                              Free until: {formatDate(getFreeServiceValidUntil(s)!)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">
-                      {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | Completed: {formatDate(s.completed_date)}
+                      {s.service_type === 'free_service' && !isFreeServiceActive(s)
+                        ? 'Paid Service'
+                        : SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | Completed: {formatDate(s.completed_date)}
                       {s.actual_amount > 0 && <> | {formatCurrency(s.actual_amount)}</>}
                     </p>
                   </div>

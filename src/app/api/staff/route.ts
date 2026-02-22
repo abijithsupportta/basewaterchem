@@ -41,7 +41,20 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('staff')
-      .select('id, auth_user_id, full_name, email, phone, role, is_active, avatar_url, created_at, updated_at')
+      .select(`
+        id, 
+        auth_user_id, 
+        full_name, 
+        email, 
+        phone, 
+        role, 
+        is_active, 
+        avatar_url, 
+        branch_id,
+        created_at, 
+        updated_at,
+        branch:branches(id, branch_name, branch_code)
+      `)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -77,6 +90,7 @@ export async function POST(request: NextRequest) {
       email: body.email,
       phone: body.phone ?? null,
       role: requestedRole,
+      branch_id: body.branch_id ?? null,
       is_active: body.is_active ?? true,
     };
 

@@ -4,7 +4,6 @@
  */
 
 import { emailService } from '@/domain/services';
-import { formatDate } from '@/shared/utils';
 
 /**
  * @deprecated Use emailService.sendServiceScheduledEmail() from domain/services/email.service
@@ -100,7 +99,14 @@ export async function sendBatchReminders(supabase: any) {
           customerEmail: customer.email,
           customerName: customer.full_name,
           serviceNumber: service.service_number || `SRV-${service.id.slice(0, 8)}`,
-          serviceType: service.service_type === 'amc_service' ? 'Recurring Service' : service.service_type === 'installation' ? 'Installation' : 'Paid Service',
+          serviceType:
+            service.service_type === 'amc_service'
+              ? 'Recurring Service'
+              : service.service_type === 'installation'
+                ? 'Installation'
+                : service.service_type === 'free_service'
+                  ? 'Free Service'
+                  : 'Paid Service',
           scheduledDate: service.scheduled_date,
           daysUntil: daysAhead,
           description: service.description,

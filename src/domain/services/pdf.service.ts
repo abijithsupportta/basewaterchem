@@ -43,6 +43,7 @@ export interface InvoiceData {
 
 export interface CompanySettings {
   company_name: string;
+  location: string;
   address_line1: string;
   address_line2: string;
   city: string;
@@ -58,11 +59,20 @@ export interface CompanySettings {
 
 export interface ServiceItem {
   service_id: string;
+  service_number?: string;
   service_type: string;
   scheduled_date: string;
   completed_date?: string;
-  amount: number;
-  parts?: { name: string; cost: number }[];
+  parts_used?: { part_name?: string; name?: string; qty?: number; unit_price?: number; cost?: number }[];
+  parts_cost?: number;
+  service_charge?: number;
+  discount?: number;
+  tax_percent?: number;
+  tax_amount?: number;
+  total_amount?: number;
+  payment_status?: string;
+  work_done?: string;
+  notes?: string;
 }
 
 class PDFService {
@@ -354,7 +364,7 @@ class PDFService {
    */
   generateServiceReportPDF(
     service: ServiceItem,
-    customer: { full_name: string; phone?: string; address?: string },
+    customer: { full_name: string; phone?: string; address?: string; address_line1?: string; city?: string; state?: string; pincode?: string },
     company: CompanySettings
   ): jsPDF {
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -363,16 +373,34 @@ class PDFService {
 
     // ─── Header ───
     doc.setFillColor(16, 185, 129);
-    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.rect(0, 0, pageWidth, 28, 'F');
 
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text('SERVICE REPORT', margin, 14);
+    doc.text('SERVICE RECEIPT', margin, 14);
 
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.text(company.company_name || 'Base Water Chemicals', margin, 19);
+
+    const companyAddr = [
+      company.location,
+      company.address_line1,
+      company.address_line2,
+      company.city,
+      company.state,
+      company.pincode,
+    ].filter(Boolean).join(', ');
+    if (companyAddr) {
+      doc.setFontSize(8);
+      doc.text(companyAddr, margin, 23);
+    }
+
+    if (company.gst_number) {
+      doc.setFontSize(8);
+      doc.text('GSTIN: ' + company.gst_number, pageWidth - margin, 19, { align: 'right' });
+    }
 
     let y = 32;
 
@@ -385,7 +413,7 @@ class PDFService {
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text('Service ID: ' + service.service_id, margin, y);
+    doc.text('Service ID: ' + (service.service_number || service.service_id || (service as any).id), margin, y);
     y += 5;
     doc.text('Type: ' + service.service_type, margin, y);
     y += 5;
@@ -407,20 +435,32 @@ class PDFService {
       doc.text('Phone: ' + customer.phone, margin, y);
       y += 5;
     }
-    if (customer.address) {
-      const splitAddr = doc.splitTextToSize(customer.address, 150);
+    const customerAddress = customer.address || [
+      customer.address_line1,
+      customer.city,
+      customer.state,
+      customer.pincode,
+    ].filter(Boolean).join(', ');
+    if (customerAddress) {
+      const splitAddr = doc.splitTextToSize(customerAddress, 150);
       doc.text(splitAddr, margin, y);
       y += splitAddr.length * 4 + 5;
     }
 
     // ─── Parts & Charges Table ───
-    if (service.parts && service.parts.length > 0) {
+    const parts = service.parts_used || [];
+    if (parts.length > 0) {
       y += 3;
-      const tableData = service.parts.map((part) => [part.name, this.formatMoney(part.cost)]);
+      const tableData = parts.map((part) => {
+        const qty = part.qty ?? 1;
+        const unitPrice = part.unit_price ?? part.cost ?? 0;
+        const total = qty * unitPrice;
+        return [part.part_name || part.name || '-', qty.toString(), this.formatINR(unitPrice), this.formatINR(total)];
+      });
 
       (autoTable as any)(doc, {
         startY: y,
-        head: [['Part/Item', 'Cost (Rs)']],
+        head: [['Part/Item', 'Qty', 'Unit Price (Rs)', 'Amount (Rs)']],
         body: tableData,
         theme: 'grid',
         headStyles: {
@@ -428,9 +468,17 @@ class PDFService {
           textColor: [255, 255, 255],
           fontSize: 9,
           fontStyle: 'bold',
+          halign: 'center',
         },
         bodyStyles: {
           fontSize: 9,
+          cellPadding: 3,
+        },
+        columnStyles: {
+          0: { cellWidth: 'auto' },
+          1: { halign: 'center', cellWidth: 18 },
+          2: { halign: 'right', cellWidth: 30 },
+          3: { halign: 'right', cellWidth: 30 },
         },
         margin: { left: margin, right: margin },
       });
@@ -438,11 +486,70 @@ class PDFService {
       y = (doc as any).lastAutoTable.finalY + 8;
     }
 
-    // ─── Total Amount ───
-    doc.setFontSize(12);
+    const partsCost = service.parts_cost ?? parts.reduce((sum, part) => {
+      const qty = part.qty ?? 1;
+      const unitPrice = part.unit_price ?? part.cost ?? 0;
+      return sum + qty * unitPrice;
+    }, 0);
+    const serviceCharge = service.service_charge ?? 0;
+    const discount = service.discount ?? 0;
+    const taxPercent = service.tax_percent ?? 0;
+    const taxAmount = service.tax_amount ?? 0;
+    const totalAmount = service.total_amount ?? Math.max(partsCost + serviceCharge + taxAmount - discount, 0);
+
+    // ─── Totals Summary ───
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Parts Cost:', margin, y);
+    doc.text(this.formatMoney(partsCost), pageWidth - margin, y, { align: 'right' });
+    y += 6;
+    doc.text('Service Charge:', margin, y);
+    doc.text(this.formatMoney(serviceCharge), pageWidth - margin, y, { align: 'right' });
+    y += 6;
+    if (discount > 0) {
+      doc.text('Discount:', margin, y);
+      doc.text('-' + this.formatMoney(discount), pageWidth - margin, y, { align: 'right' });
+      y += 6;
+    }
+    if (taxAmount > 0) {
+      doc.text(`GST (${taxPercent}%):`, margin, y);
+      doc.text(this.formatMoney(taxAmount), pageWidth - margin, y, { align: 'right' });
+      y += 6;
+    }
+
     doc.setFont('helvetica', 'bold');
-    doc.text('Total Amount:', margin, y);
-    doc.text(this.formatMoney(service.amount), pageWidth - margin, y, { align: 'right' });
+    doc.setFontSize(12);
+    doc.text('Total Amount:', margin, y + 2);
+    doc.text(this.formatMoney(totalAmount), pageWidth - margin, y + 2, { align: 'right' });
+    y += 10;
+
+    if (service.payment_status) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text('Payment Status: ' + service.payment_status, margin, y);
+      y += 6;
+    }
+
+    if (service.work_done) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('Work Done:', margin, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      const splitWork = doc.splitTextToSize(service.work_done, pageWidth - margin * 2);
+      doc.text(splitWork, margin, y);
+      y += splitWork.length * 4 + 4;
+    }
+
+    if (service.notes) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('Notes:', margin, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      const splitNotes = doc.splitTextToSize(service.notes, pageWidth - margin * 2);
+      doc.text(splitNotes, margin, y);
+    }
 
     return doc;
   }

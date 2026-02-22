@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Loading } from '@/components/ui/loading';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
+import { Loader2, Plus, Trash2, UserPlus, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,8 +19,9 @@ import { invoiceSchema } from '@/lib/validators';
 import { useCustomers } from '@/hooks/use-customers';
 import { formatCurrency } from '@/lib/utils';
 import { DEFAULT_TAX_PERCENT } from '@/lib/constants';
-import { createBrowserClient } from '@/lib/supabase/client';
+import {  } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
+import { InventoryProduct } from '@/types/inventory';
 
 export default function NewInvoicePage() {
   return <Suspense fallback={<Loading />}><NewInvoiceContent /></Suspense>;
@@ -31,11 +32,29 @@ function NewInvoiceContent() {
   const searchParams = useSearchParams();
   const preselectedCustomer = searchParams.get('customer') || '';
   const { customers, createCustomer } = useCustomers();
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>([]);
 
   // Quick-add customer state
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [newCust, setNewCust] = useState({ full_name: '', phone: '', email: '', address_line1: '', city: '', district: '', state: 'Kerala', pincode: '' });
+
+  // Fetch inventory products
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        const res = await fetch('/api/inventory/products?active_only=true');
+        if (res.ok) {
+          const data = await res.json();
+          setInventoryProducts(data);
+        }
+      } catch (error) {
+        console.error('Error fetching inventory:', error);
+      }
+    };
+    fetchInventory();
+  }, []);
 
   const {
     register, handleSubmit, setValue, watch, control,
@@ -49,8 +68,9 @@ function NewInvoiceContent() {
       discount_amount: 0,
       notes: '',
       amc_enabled: false,
+      free_service_enabled: false,
       amc_period_months: 3,
-      items: [{ item_name: '', description: '', quantity: 1, unit_price: 0 }],
+      items: [{ item_name: '', description: '', quantity: 1, unit_price: 0, inventory_product_id: null }],
     },
   });
 
@@ -63,18 +83,76 @@ function NewInvoiceContent() {
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
 
+  // Initialize source type for first item
+  useEffect(() => {
+    if (itemSourceTypes.length === 0) {
+      setItemSourceTypes(['manual']);
+    }
+  }, [itemSourceTypes.length]);
+
+  const handleAddItem = () => {
+    append({ item_name: '', description: '', quantity: 1, unit_price: 0, inventory_product_id: null });
+    setItemSourceTypes([...itemSourceTypes, 'manual']);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    remove(index);
+    setItemSourceTypes(itemSourceTypes.filter((_, i) => i !== index));
+  };
+
+  const handleSourceTypeChange = (index: number, type: 'manual' | 'stock') => {
+    const newTypes = [...itemSourceTypes];
+    newTypes[index] = type;
+    setItemSourceTypes(newTypes);
+
+    // Reset item fields when switching
+    if (type === 'manual') {
+      setValue(`items.${index}.inventory_product_id`, null);
+      setValue(`items.${index}.item_name`, '');
+      setValue(`items.${index}.description`, '');
+      setValue(`items.${index}.unit_price`, 0);
+    } else {
+      setValue(`items.${index}.item_name`, '');
+      setValue(`items.${index}.description`, '');
+      setValue(`items.${index}.unit_price`, 0);
+      setValue(`items.${index}.inventory_product_id`, null);
+    }
+  };
+
+  const handleStockProductChange = (index: number, productId: string) => {
+    const product = inventoryProducts.find((p) => p.id === productId);
+    if (product) {
+      setValue(`items.${index}.inventory_product_id`, productId as any);
+      setValue(`items.${index}.item_name`, product.name);
+      setValue(`items.${index}.description`, product.description || '');
+      setValue(`items.${index}.unit_price`, product.unit_price);
+    }
+  };
+
   const items = watch('items') || [];
   const taxPercent = watch('tax_percent') || 0;
   const discountAmount = watch('discount_amount') || 0;
   const amcEnabled = watch('amc_enabled');
+  const freeServiceEnabled = watch('free_service_enabled');
   const subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity || 0) * (item.unit_price || 0), 0);
   const taxAmount = (subtotal * taxPercent) / 100;
   const total = subtotal + taxAmount - discountAmount;
 
   const onSubmit = async (data: any) => {
     try {
-      const supabase = createBrowserClient();
-      const { items: itemsData, amc_enabled, amc_period_months, ...invoiceData } = data;
+      const supabase = (await import('@/lib/supabase/client')).createBrowserClient();
+      const { items: itemsData, amc_enabled, amc_period_months, free_service_enabled, ...invoiceData } = data;
+
+      let createdByStaffId: string | null = null;
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData.user) {
+        const { data: staff } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('auth_user_id', authData.user.id)
+          .maybeSingle();
+        createdByStaffId = staff?.id ?? null;
+      }
 
       // Create the invoice
       const { data: invoice, error } = await supabase.from('invoices').insert({
@@ -85,7 +163,7 @@ function NewInvoiceContent() {
         balance_due: total,
         amc_enabled: amc_enabled || false,
         amc_period_months: amc_enabled ? amc_period_months : null,
-        created_by_staff_id: 'current-staff-id', // TODO: Replace with real user id
+        created_by_staff_id: createdByStaffId,
       }).select().single();
       if (error) throw error;
 
@@ -98,9 +176,30 @@ function NewInvoiceContent() {
           quantity: item.quantity,
           unit_price: item.unit_price,
           total_price: item.quantity * item.unit_price,
+          inventory_product_id: item.inventory_product_id || null,
           sort_order: idx,
         }));
         await supabase.from('invoice_items').insert(itemsToInsert);
+
+        // Deduct stock for items from inventory
+        for (const item of itemsData) {
+          if (item.inventory_product_id && item.quantity > 0) {
+            try {
+              await supabase.rpc('log_stock_transaction', {
+                p_product_id: item.inventory_product_id,
+                p_transaction_type: 'sale',
+                p_quantity: -item.quantity,
+                p_reference_type: 'invoice',
+                p_reference_id: invoice.id,
+                p_notes: `Sold via Invoice ${invoice.invoice_number || invoice.id}`,
+                p_created_by: createdByStaffId,
+              });
+            } catch (stockError) {
+              console.error('Error deducting stock:', stockError);
+              toast.error(`Warning: Stock not deducted for ${item.item_name}`);
+            }
+          }
+        }
       }
 
       // If AMC enabled, create AMC contract and schedule first service
@@ -152,7 +251,41 @@ function NewInvoiceContent() {
         }
       }
 
-      toast.success(amc_enabled ? 'Invoice created with recurring service!' : 'Invoice created!');
+      if (free_service_enabled) {
+        const invoiceDate = new Date(invoiceData.invoice_date || new Date());
+        const scheduledDate = invoiceDate.toISOString().split('T')[0];
+        const freeServiceValidUntil = new Date(invoiceDate);
+        freeServiceValidUntil.setDate(freeServiceValidUntil.getDate() + 365);
+
+        const { error: freeSrvError } = await supabase.from('services').insert({
+          customer_id: invoiceData.customer_id,
+          service_type: 'free_service',
+          status: 'scheduled',
+          scheduled_date: scheduledDate,
+          description: `Free service - Invoice ${invoice.invoice_number || 'N/A'} (valid for 365 days)`,
+          payment_status: 'not_applicable',
+          free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
+        });
+        if (freeSrvError) throw freeSrvError;
+
+        const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
+        if (selectedCust?.email) {
+          notifyCustomer('service_scheduled', {
+            customerEmail: selectedCust.email,
+            customerName: selectedCust.full_name,
+            serviceNumber: invoice.invoice_number || 'New Service',
+            serviceType: 'Free Service',
+            scheduledDate: scheduledDate,
+            description: `Free service activated for 365 days from Invoice ${invoice.invoice_number || ''}`,
+          });
+        }
+      }
+
+      toast.success(
+        amc_enabled || free_service_enabled
+          ? 'Invoice created with service setup!'
+          : 'Invoice created!'
+      );
       router.push(`/dashboard/invoices/${invoice.id}`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to create invoice');
@@ -268,7 +401,10 @@ function NewInvoiceContent() {
 
               <div className="space-y-2"><Label>Invoice Date</Label><Input type="date" {...register('invoice_date')} /></div>
             </div>
-            <div className="space-y-2"><Label>Notes</Label><Textarea {...register('notes')} placeholder="Payment terms, notes..." /></div>
+            <div className="space-y-2">
+              <Label>Additional Notes <span className="text-muted-foreground text-xs">(Optional)</span></Label>
+              <Textarea {...register('notes')} placeholder="Payment terms, special instructions, etc. (optional)" rows={3} />
+            </div>
           </CardContent>
         </Card>
 
@@ -300,20 +436,122 @@ function NewInvoiceContent() {
           )}
         </Card>
 
+        <Card className="max-w-3xl border-emerald-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" {...register('free_service_enabled')} className="h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                <span>Enable Free Service (365 Days)</span>
+              </label>
+            </CardTitle>
+          </CardHeader>
+          {freeServiceEnabled && (
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                A free service entry will be created and tagged as free for 365 days from the invoice date.
+              </p>
+            </CardContent>
+          )}
+        </Card>
+
         <Card className="max-w-3xl">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Line Items</CardTitle>
-            <Button type="button" size="sm" variant="outline" onClick={() => append({ item_name: '', description: '', quantity: 1, unit_price: 0 })}><Plus className="mr-1 h-3 w-3" /> Add</Button>
+            <Button type="button" size="sm" variant="outline" onClick={handleAddItem}><Plus className="mr-1 h-3 w-3" /> Add</Button>
           </CardHeader>
           <CardContent className="space-y-4">
             {fields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-3 space-y-1">{index === 0 && <Label className="text-xs">Item Name</Label>}<Input {...register(`items.${index}.item_name`)} placeholder="Item name" /></div>
-                <div className="col-span-3 space-y-1">{index === 0 && <Label className="text-xs">Description</Label>}<Input {...register(`items.${index}.description`)} placeholder="Description" /></div>
-                <div className="col-span-2 space-y-1">{index === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" {...register(`items.${index}.quantity`, { valueAsNumber: true })} /></div>
-                <div className="col-span-2 space-y-1">{index === 0 && <Label className="text-xs">Unit Price</Label>}<Input type="number" {...register(`items.${index}.unit_price`, { valueAsNumber: true })} /></div>
-                <div className="col-span-1 text-right text-sm font-medium pt-1">{formatCurrency((items[index]?.quantity || 0) * (items[index]?.unit_price || 0))}</div>
-                <div className="col-span-1">{fields.length > 1 && <Button type="button" size="icon" variant="ghost" onClick={() => remove(index)}><Trash2 className="h-4 w-4 text-destructive" /></Button>}</div>
+              <div key={field.id} className="space-y-3 border rounded-lg p-3 bg-muted/30">
+                {/* Source Type Toggle */}
+                <div className="flex items-center gap-4 mb-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={itemSourceTypes[index] === 'manual'}
+                      onChange={() => handleSourceTypeChange(index, 'manual')}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm">Manual Entry</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={itemSourceTypes[index] === 'stock'}
+                      onChange={() => handleSourceTypeChange(index, 'stock')}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm flex items-center gap-1">
+                      <Package className="h-4 w-4" /> From Stock
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  {itemSourceTypes[index] === 'stock' ? (
+                    <>
+                      <div className="col-span-4 space-y-1">
+                        {index === 0 && <Label className="text-xs">Select Product</Label>}
+                        <SearchableSelect
+                          options={inventoryProducts.map((product) => ({
+                            value: product.id,
+                            label: `${product.name} • Stock: ${product.stock_quantity} • ${formatCurrency(product.unit_price)}`,
+                          }))}
+                          value={watch(`items.${index}.inventory_product_id`) || ''}
+                          onChange={(val) => handleStockProductChange(index, val)}
+                          placeholder="Search products..."
+                          searchPlaceholder="Type to search products..."
+                        />
+                      </div>
+                      <div className="col-span-3 space-y-1">
+                        {index === 0 && <Label className="text-xs">Description <span className="text-muted-foreground">(Optional)</span></Label>}
+                        <Input {...register(`items.${index}.description`)} placeholder="Additional notes (optional)" disabled={!watch(`items.${index}.inventory_product_id`)} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-span-3 space-y-1">
+                        {index === 0 && <Label className="text-xs">Item Name</Label>}
+                        <Input {...register(`items.${index}.item_name`)} placeholder="Item name" />
+                      </div>
+                      <div className="col-span-4 space-y-1">
+                        {index === 0 && <Label className="text-xs">Description <span className="text-muted-foreground">(Optional)</span></Label>}
+                        <Input {...register(`items.${index}.description`)} placeholder="Item details (optional)" />
+                      </div>
+                    </>
+                  )}
+                  
+                  <div className="col-span-2 space-y-1">
+                    {index === 0 && <Label className="text-xs">Qty</Label>}
+                    <Input
+                      type="number"
+                      {...register(`items.${index}.quantity`, { valueAsNumber: true })}
+                      max={
+                        itemSourceTypes[index] === 'stock' && watch(`items.${index}.inventory_product_id`)
+                          ? inventoryProducts.find(p => p.id === watch(`items.${index}.inventory_product_id`))?.stock_quantity
+                          : undefined
+                      }
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    {index === 0 && <Label className="text-xs">Unit Price</Label>}
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...register(`items.${index}.unit_price`, { valueAsNumber: true })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="col-span-1 text-right text-sm font-medium pt-1">
+                    {formatCurrency((items[index]?.quantity || 0) * (items[index]?.unit_price || 0))}
+                  </div>
+                  <div className="col-span-1">
+                    {fields.length > 1 && (
+                      <Button type="button" size="icon" variant="ghost" onClick={() => handleRemoveItem(index)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
             <div className="border-t pt-4 space-y-2 text-right">

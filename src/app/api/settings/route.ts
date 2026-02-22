@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 const DEFAULT_SETTINGS = {
   company_name: 'Base Water Chemicals',
+  location: '',
   address_line1: '',
   address_line2: '',
   city: '',

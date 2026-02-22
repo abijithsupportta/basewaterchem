@@ -12,6 +12,7 @@ import { Loading } from '@/components/ui/loading';
 
 interface CompanySettings {
   company_name: string;
+  location: string;
   address_line1: string;
   address_line2: string;
   city: string;
@@ -27,6 +28,7 @@ interface CompanySettings {
 
 const DEFAULT_SETTINGS: CompanySettings = {
   company_name: 'Base Water Chemicals',
+  location: '',
   address_line1: '',
   address_line2: '',
   city: '',
@@ -104,8 +106,12 @@ export default function SettingsPage() {
           <CardHeader><CardTitle className="text-base">Company Information</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Company Name *</Label>
+              <Label>Shop / Company Name *</Label>
               <Input value={settings.company_name} onChange={(e) => update('company_name', e.target.value)} placeholder="Your Company Name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input value={settings.location} onChange={(e) => update('location', e.target.value)} placeholder="Area or Location" />
             </div>
             <div className="space-y-2">
               <Label>Phone</Label>

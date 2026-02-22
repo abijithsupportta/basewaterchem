@@ -11,7 +11,7 @@ import { Loading } from '@/components/ui/loading';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useServices } from '@/hooks/use-services';
-import { formatDate, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
+import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 
 const STATUS_CHIPS = [
@@ -160,6 +160,7 @@ export default function ServicesPage() {
           <option value="amc_service">Recurring Service</option>
           <option value="paid_service">Paid Service</option>
           <option value="installation">Installation</option>
+          <option value="free_service">Free Service</option>
         </select>
       </div>
 
@@ -177,7 +178,21 @@ export default function ServicesPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <p className="font-medium">{service.service_number}</p>
-                      <Badge variant="outline">{SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}</Badge>
+                      <Badge variant="outline">
+                        {service.service_type === 'free_service' && !isFreeServiceActive(service)
+                          ? 'Paid Service'
+                          : SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}
+                      </Badge>
+                      {isFreeServiceActive(service) && (
+                        <>
+                          <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
+                          {getFreeServiceValidUntil(service) && (
+                            <span className="text-xs text-muted-foreground">
+                              Free until: {formatDate(getFreeServiceValidUntil(service)!)}
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       {(service.customer as any)?.full_name || 'Unknown Customer'} | 

@@ -11,7 +11,7 @@ export interface InvoiceItem {
   invoice_id: string;
   product_id: string | null;
   item_name: string | null;
-  description: string;
+  description?: string | null;
   quantity: number;
   unit_price: number;
   total_price: number;
@@ -21,7 +21,7 @@ export interface InvoiceItem {
 export interface InvoiceItemFormData {
   product_id?: string;
   item_name?: string;
-  description: string;
+  description?: string;
   quantity: number;
   unit_price: number;
 }
@@ -46,9 +46,12 @@ export interface Invoice {
   payment_reference: string | null;
   payment_date: string | null;
   amc_enabled: boolean;
+  free_service_enabled: boolean;
   amc_period_months: number | null;
   notes: string | null;
   created_by: string | null;
+  created_by_staff_id: string | null;
+  created_by_staff_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +66,7 @@ export interface InvoiceFormData {
   discount_amount?: number;
   notes?: string;
   amc_enabled?: boolean;
+  free_service_enabled?: boolean;
   amc_period_months?: number;
   items: InvoiceItemFormData[];
 }

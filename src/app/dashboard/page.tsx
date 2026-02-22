@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Users, Wrench, Clock, Calendar, CreditCard, IndianRupee,
   AlertCircle, ArrowRight, Phone, MapPin, FileCheck,
   Banknote, Smartphone, Building2, Receipt, CircleDollarSign,
-  TrendingUp, CircleCheck, CircleDashed, CircleAlert,
+  TrendingUp, CircleCheck, CircleDashed, CircleAlert, Wallet, Download,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,9 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { downloadDayBookPDF } from '@/lib/daybook-pdf';
+import { useUserRole } from '@/lib/use-user-role';
+import { canAccessDashboard } from '@/lib/authz';
 
 const TIME_CHIPS = [
   { value: 'today', label: 'Today' },
@@ -57,6 +61,8 @@ function getDateRange(period: string): { from?: string; to?: string } {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const userRole = useUserRole();
   const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -65,7 +71,15 @@ export default function DashboardPage() {
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [pendingPayments, setPendingPayments] = useState(0);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Redirect staff away from dashboard
+  useEffect(() => {
+    if (userRole && !canAccessDashboard(userRole)) {
+      router.push('/dashboard/services');
+    }
+  }, [userRole, router]);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -112,15 +126,23 @@ export default function DashboardPage() {
       .from('invoices')
       .select('id, invoice_number, status, total_amount, amount_paid, balance_due, payment_method, payment_date, invoice_date, customer:customers(full_name)');
 
+    let expenseQuery = supabase
+      .from('expenses')
+      .select('id, expense_date, title, category, amount, payment_method, description')
+      .order('expense_date', { ascending: false });
+
     if (dateRange.from) invDataQuery = invDataQuery.gte('invoice_date', dateRange.from);
     if (dateRange.to) invDataQuery = invDataQuery.lte('invoice_date', dateRange.to);
+    if (dateRange.from) expenseQuery = expenseQuery.gte('expense_date', dateRange.from);
+    if (dateRange.to) expenseQuery = expenseQuery.lte('expense_date', dateRange.to);
 
-    const [srvRes, pendRes, custRes, invCountRes, invDataRes] = await Promise.all([
+    const [srvRes, pendRes, custRes, invCountRes, invDataRes, expRes] = await Promise.all([
       srvQuery,
       pendingQuery,
       custQuery,
       invCountQuery,
       invDataQuery,
+      expenseQuery,
     ]);
 
     setServices(srvRes.data || []);
@@ -128,6 +150,7 @@ export default function DashboardPage() {
     setTotalCustomers(custRes.count || 0);
     setPendingPayments(invCountRes.count || 0);
     setInvoices(invDataRes.data || []);
+    setExpenses(expRes.data || []);
     setLoading(false);
   }, [dateRange]);
 
@@ -185,6 +208,65 @@ export default function DashboardPage() {
       srvPaidAmt, srvPartialAmt, srvPendingAmt,
     };
   }, [invoices, services]);
+
+  const expenseStats = useMemo(() => {
+    const total = expenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0);
+    return { total, count: expenses.length };
+  }, [expenses]);
+
+  const dayBook = useMemo(() => {
+    const sales = paymentStats.totalInvoiced + stats.revenue;
+    const servicesCount = stats.total;
+    const revenue = stats.revenue;
+    const expensesTotal = expenseStats.total;
+    const dues = paymentStats.totalPending;
+    const collected = paymentStats.totalCollected;
+    const profit = collected + revenue - expensesTotal;
+
+    return {
+      sales,
+      services: servicesCount,
+      revenue,
+      expenses: expensesTotal,
+      dues,
+      collected,
+      profit,
+    };
+  }, [paymentStats, stats, expenseStats]);
+
+  const downloadStatement = () => {
+    downloadDayBookPDF({
+      periodLabel: timeFilter,
+      from: dateRange.from,
+      to: dateRange.to,
+      summary: dayBook,
+      rows: {
+        invoices: invoices.map((i: any) => ({
+          invoice_number: i.invoice_number,
+          invoice_date: i.invoice_date,
+          customer_name: i.customer?.full_name,
+          total_amount: i.total_amount,
+          amount_paid: i.amount_paid,
+          balance_due: i.balance_due,
+        })),
+        services: services.map((s: any) => ({
+          service_number: s.service_number,
+          scheduled_date: s.scheduled_date,
+          customer_name: s.customer?.full_name,
+          status: s.status,
+          total_amount: s.total_amount,
+          payment_status: s.payment_status,
+        })),
+        expenses: expenses.map((e: any) => ({
+          expense_date: e.expense_date,
+          title: e.title,
+          category: e.category,
+          amount: e.amount,
+          payment_method: e.payment_method,
+        })),
+      },
+    });
+  };
 
 
   const statCards = [
@@ -250,6 +332,27 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-emerald-600" />
+            Quick Summary
+          </CardTitle>
+          <Link href="/dashboard/day-book">
+            <Button size="sm">View Day Book</Button>
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(dayBook.sales)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Services</p><p className="font-bold">{dayBook.services}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expenses</p><p className="font-bold text-red-600">{formatCurrency(dayBook.expenses)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(dayBook.dues)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${dayBook.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(dayBook.profit)}</p></div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ─── Payment Collection Section ─── */}
       <div className="space-y-4">

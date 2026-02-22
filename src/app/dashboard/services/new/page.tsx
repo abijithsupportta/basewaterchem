@@ -55,7 +55,23 @@ function NewServicePageContent() {
   const onSubmit = async (data: ServiceFormData) => {
     try {
       const supabase = createBrowserClient();
-      const { data: newService, error } = await supabase.from('services').insert(data).select('service_number').single();
+      const freeServiceValidUntil = data.service_type === 'free_service'
+        ? (() => {
+            const base = new Date(data.scheduled_date);
+            base.setDate(base.getDate() + 365);
+            return base.toISOString().split('T')[0];
+          })()
+        : null;
+
+      const { data: newService, error } = await supabase
+        .from('services')
+        .insert({
+          ...data,
+          free_service_valid_until: freeServiceValidUntil,
+          payment_status: data.service_type === 'free_service' ? 'not_applicable' : undefined,
+        })
+        .select('service_number')
+        .single();
       if (error) throw error;
 
       // Send email notification to customer
@@ -65,7 +81,14 @@ function NewServicePageContent() {
           customerEmail: selectedCustomer.email,
           customerName: selectedCustomer.full_name,
           serviceNumber: newService?.service_number || 'New Service',
-          serviceType: data.service_type === 'amc_service' ? 'Recurring Service' : data.service_type === 'installation' ? 'Installation' : 'Paid Service',
+          serviceType:
+            data.service_type === 'amc_service'
+              ? 'Recurring Service'
+              : data.service_type === 'installation'
+                ? 'Installation'
+                : data.service_type === 'free_service'
+                  ? 'Free Service'
+                  : 'Paid Service',
           scheduledDate: data.scheduled_date,
           description: data.description || '',
         });
@@ -110,6 +133,7 @@ function NewServicePageContent() {
     { value: 'amc_service', label: 'Recurring Service' },
     { value: 'paid_service', label: 'Paid Service' },
     { value: 'installation', label: 'Installation' },
+    { value: 'free_service', label: 'Free Service (365 days)' },
   ];
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Wrench, FileCheck,
-  Receipt, Droplets, LogOut, ChevronLeft, CalendarDays, Settings,
+  Receipt, Droplets, LogOut, ChevronLeft, CalendarDays, Settings, Wallet, Package, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useUserRole } from '@/lib/use-user-role';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays, Settings,
+  LayoutDashboard, Users, Wrench, FileCheck, Receipt, CalendarDays, Settings, Wallet, Package, Building2,
 };
 
 export function Sidebar() {
@@ -24,21 +24,11 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (userRole === 'admin') return true;
-    if (userRole === 'manager') return item.href !== '/dashboard/staff';
-    if (userRole === 'staff') {
-      return [
-        '/dashboard',
-        '/dashboard/services',
-        '/dashboard/services/calendar',
-        '/dashboard/invoices',
-      ].includes(item.href);
+    // Filter by role-based permissions
+    if (item.roles && !item.roles.includes(userRole)) {
+      return false;
     }
-    return [
-      '/dashboard',
-      '/dashboard/services',
-      '/dashboard/services/calendar',
-    ].includes(item.href);
+    return true;
   });
 
   return (

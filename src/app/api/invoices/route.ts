@@ -30,6 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create invoices.' }, { status: 403 });
     }
 
+    // Get staff details for tracking
+    let staffId: string | null = null;
+    let staffName: string | null = null;
+    if (user) {
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('id, full_name')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      
+      if (staffData) {
+        staffId = staffData.id;
+        staffName = staffData.full_name;
+      }
+    }
+
     const repo = new InvoiceRepository(supabase);
     const body = await request.json();
     const validated = invoiceSchema.parse(body);
@@ -42,7 +58,12 @@ export async function POST(request: NextRequest) {
       invoiceData.discount_amount ?? 0
     );
 
-    const invoice = await repo.create({ ...invoiceData, ...calculated });
+    const invoice = await repo.create({ 
+      ...invoiceData, 
+      ...calculated,
+      created_by_staff_id: staffId,
+      created_by_staff_name: staffName,
+    });
     if (items.length > 0) {
       await repo.createItems(
         items.map((item) => ({ ...item, invoice_id: invoice.id }))

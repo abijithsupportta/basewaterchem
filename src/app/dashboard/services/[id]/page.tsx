@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, Calendar, Clock, Download, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Calendar, Clock, Download, Loader2, Plus, Trash2, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,18 +12,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus } from '@/lib/utils';
-import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil } from '@/lib/utils';
+import { DEFAULT_TAX_PERCENT, SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
 import { useUserRole } from '@/lib/use-user-role';
 import { downloadServicePDF } from '@/lib/service-pdf';
+import { InventoryProduct } from '@/types/inventory';
 
 interface CompletionItem {
   part_name: string;
   qty: number;
   unit_price: number;
+  inventory_product_id?: string | null;
 }
 
 export default function ServiceDetailPage() {
@@ -36,27 +40,63 @@ export default function ServiceDetailPage() {
   const [markingDone, setMarkingDone] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
   const [companySettings, setCompanySettings] = useState<any>(null);
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>([]);
 
   // Completion form state
   const [workDone, setWorkDone] = useState('');
   const [items, setItems] = useState<CompletionItem[]>([]);
   const [serviceCharge, setServiceCharge] = useState(0);
   const [discount, setDiscount] = useState(0);
+  const [applyTax, setApplyTax] = useState(false);
+  const [taxPercent, setTaxPercent] = useState(DEFAULT_TAX_PERCENT);
 
   const partsCost = items.reduce((sum, item) => sum + item.qty * item.unit_price, 0);
-  const totalAmount = partsCost + serviceCharge - discount;
+  const taxAmount = applyTax ? ((partsCost + serviceCharge - discount) * taxPercent) / 100 : 0;
+  const totalAmount = partsCost + serviceCharge + taxAmount - discount;
 
   const addItem = useCallback(() => {
-    setItems((prev) => [...prev, { part_name: '', qty: 1, unit_price: 0 }]);
+    setItems((prev) => [...prev, { part_name: '', qty: 1, unit_price: 0, inventory_product_id: null }]);
+    setItemSourceTypes((prev) => [...prev, 'manual']);
   }, []);
 
   const removeItem = useCallback((index: number) => {
     setItems((prev) => prev.filter((_, i) => i !== index));
+    setItemSourceTypes((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const updateItem = useCallback((index: number, field: keyof CompletionItem, value: string | number) => {
     setItems((prev) => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
   }, []);
+
+  const handleSourceTypeChange = (index: number, type: 'manual' | 'stock') => {
+    const newTypes = [...itemSourceTypes];
+    newTypes[index] = type;
+    setItemSourceTypes(newTypes);
+
+    // Reset item fields when switching
+    const newItems = [...items];
+    if (type === 'manual') {
+      newItems[index] = { part_name: '', qty: 1, unit_price: 0, inventory_product_id: null };
+    } else {
+      newItems[index] = { part_name: '', qty: 1, unit_price: 0, inventory_product_id: null };
+    }
+    setItems(newItems);
+  };
+
+  const handleStockProductChange = (index: number, productId: string) => {
+    const product = inventoryProducts.find((p) => p.id === productId);
+    if (product) {
+      const newItems = [...items];
+      newItems[index] = {
+        part_name: product.name,
+        qty: 1,
+        unit_price: product.unit_price,
+        inventory_product_id: productId,
+      };
+      setItems(newItems);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -68,12 +108,21 @@ export default function ServiceDetailPage() {
         .eq('id', id)
         .single(),
       fetch('/api/settings').then((r) => r.json()),
-    ]).then(([serviceRes, settings]) => {
+      fetch('/api/inventory/products?active_only=true').then((r) => r.json()),
+    ]).then(([serviceRes, settings, inventoryData]) => {
       if (serviceRes.data) setService(serviceRes.data);
       if (settings) setCompanySettings(settings);
+      if (inventoryData) setInventoryProducts(inventoryData);
       setLoading(false);
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!service || !showCompleteForm) return;
+    const existingTaxPercent = Number(service.tax_percent || 0);
+    setApplyTax(existingTaxPercent > 0);
+    setTaxPercent(existingTaxPercent > 0 ? existingTaxPercent : DEFAULT_TAX_PERCENT);
+  }, [service, showCompleteForm]);
 
   const handleDownloadServicePdf = () => {
     if (!service) return;
@@ -214,7 +263,25 @@ export default function ServiceDetailPage() {
         qty: i.qty,
         cost: i.qty * i.unit_price,
         unit_price: i.unit_price,
+        inventory_product_id: i.inventory_product_id || null,
       }));
+
+      // Get staff details for tracking
+      let completedByStaffId: string | null = null;
+      let completedByStaffName: string | null = null;
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData.user) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id, full_name')
+          .eq('auth_user_id', authData.user.id)
+          .maybeSingle();
+        
+        if (staffData) {
+          completedByStaffId = staffData.id;
+          completedByStaffName = staffData.full_name;
+        }
+      }
 
       const updateData: any = {
         status: 'completed',
@@ -223,11 +290,35 @@ export default function ServiceDetailPage() {
         parts_used: partsUsed,
         parts_cost: partsCost,
         service_charge: serviceCharge,
+        tax_percent: applyTax ? taxPercent : 0,
+        tax_amount: applyTax ? taxAmount : 0,
         discount: discount,
         total_amount: Math.max(totalAmount, 0),
+        completed_by_staff_id: completedByStaffId,
+        completed_by_staff_name: completedByStaffName,
       };
       const { error } = await supabase.from('services').update(updateData).eq('id', id);
       if (error) throw error;
+
+      // Deduct stock for items from inventory (reuse completedByStaffId for stock transactions)
+      for (const item of items) {
+        if (item.inventory_product_id && item.qty > 0) {
+          try {
+            await supabase.rpc('log_stock_transaction', {
+              p_product_id: item.inventory_product_id,
+              p_transaction_type: 'service',
+              p_quantity: -item.qty,
+              p_reference_type: 'service',
+              p_reference_id: id,
+              p_notes: `Used in Service ${service.service_number || id}`,
+              p_created_by: completedByStaffId,
+            });
+          } catch (stockError) {
+            console.error('Error deducting stock:', stockError);
+            toast.error(`Warning: Stock not deducted for ${item.part_name}`);
+          }
+        }
+      }
 
       // If this is an AMC service, schedule the next one automatically
       if (service.service_type === 'amc_service' && service.amc_contract_id) {
@@ -342,8 +433,22 @@ export default function ServiceDetailPage() {
           <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-2xl font-bold">{service.service_number}</h1>
-            <p className="text-muted-foreground">{SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}</p>
+            <p className="text-muted-foreground">
+              {service.service_type === 'free_service' && !isFreeServiceActive(service)
+                ? 'Paid Service'
+                : SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}
+            </p>
           </div>
+          {isFreeServiceActive(service) && (
+            <div className="flex items-center gap-2">
+              <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
+              {getFreeServiceValidUntil(service) && (
+                <span className="text-xs text-muted-foreground">
+                  Free until: {formatDate(getFreeServiceValidUntil(service)!)}
+                </span>
+              )}
+            </div>
+          )}
           <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS]}</Badge>
         </div>
         <div className="flex gap-2">
@@ -403,6 +508,11 @@ export default function ServiceDetailPage() {
             <div><p className="text-sm text-muted-foreground">Discount</p><p className="text-lg font-bold text-red-600">-{formatCurrency(service.discount || 0)}</p></div>
             <div><p className="text-sm text-muted-foreground">Total</p><p className="text-lg font-bold">{formatCurrency(service.total_amount || 0)}</p></div>
           </div>
+          {service.tax_amount > 0 && (
+            <div className="mt-4 text-sm text-muted-foreground">
+              GST ({service.tax_percent || 0}%): {formatCurrency(service.tax_amount || 0)}
+            </div>
+          )}
           <div className="mt-3">
             <Badge className={getStatusColor(service.payment_status)}>{PAYMENT_STATUS_LABELS[service.payment_status as keyof typeof PAYMENT_STATUS_LABELS] || service.payment_status}</Badge>
           </div>
@@ -443,11 +553,13 @@ export default function ServiceDetailPage() {
         </Card>
       )}
 
-      {/* Complete Service Form */}
-      {showCompleteForm && (
-        <Card className="border-green-200 bg-green-50/50">
-          <CardHeader><CardTitle className="text-base text-green-800">Complete Service</CardTitle></CardHeader>
-          <CardContent className="space-y-6">
+      {/* Complete Service Dialog */}
+      <Dialog open={showCompleteForm} onOpenChange={setShowCompleteForm}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Complete Service</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
             {/* Work Done */}
             <div className="space-y-2">
               <Label>Work Done *</Label>
@@ -463,34 +575,77 @@ export default function ServiceDetailPage() {
                 </Button>
               </div>
               {items.length > 0 && (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[1fr_80px_100px_40px] gap-2 text-xs font-medium text-muted-foreground">
-                    <span>Item Name</span><span className="text-center">Qty</span><span className="text-right">Unit Price (Rs)</span><span />
-                  </div>
+                <div className="space-y-3">
                   {items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
-                      <Input
-                        placeholder="Part / Item name"
-                        value={item.part_name}
-                        onChange={(e) => updateItem(index, 'part_name', e.target.value)}
-                      />
-                      <Input
-                        type="number"
-                        min={1}
-                        value={item.qty}
-                        onChange={(e) => updateItem(index, 'qty', Number(e.target.value))}
-                        className="text-center"
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        value={item.unit_price}
-                        onChange={(e) => updateItem(index, 'unit_price', Number(e.target.value))}
-                        className="text-right"
-                      />
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)} className="h-8 w-8 text-red-500 hover:text-red-700">
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                    <div key={index} className="rounded-lg border p-3 bg-muted/30 space-y-2">
+                      {/* Source Type Toggle */}
+                      <div className="flex items-center gap-4 mb-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={itemSourceTypes[index] === 'manual'}
+                            onChange={() => handleSourceTypeChange(index, 'manual')}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Manual Entry</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={itemSourceTypes[index] === 'stock'}
+                            onChange={() => handleSourceTypeChange(index, 'stock')}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm flex items-center gap-1">
+                            <Package className="h-4 w-4" /> From Stock
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
+                        {itemSourceTypes[index] === 'stock' ? (
+                          <SearchableSelect
+                            options={inventoryProducts.map((product) => ({
+                              value: product.id,
+                              label: `${product.name} • Stock: ${product.stock_quantity} • ${formatCurrency(product.unit_price)}`,
+                            }))}
+                            value={item.inventory_product_id || ''}
+                            onChange={(val) => handleStockProductChange(index, val)}
+                            placeholder="Search products..."
+                            searchPlaceholder="Type to search products..."
+                          />
+                        ) : (
+                          <Input
+                            placeholder="Part / Item name"
+                            value={item.part_name}
+                            onChange={(e) => updateItem(index, 'part_name', e.target.value)}
+                          />
+                        )}
+                        <Input
+                          type="number"
+                          min={1}
+                          max={
+                            itemSourceTypes[index] === 'stock' && item.inventory_product_id
+                              ? inventoryProducts.find(p => p.id === item.inventory_product_id)?.stock_quantity
+                              : undefined
+                          }
+                          value={item.qty}
+                          onChange={(e) => updateItem(index, 'qty', Number(e.target.value))}
+                          className="text-center"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={item.unit_price}
+                          onChange={(e) => updateItem(index, 'unit_price', Number(e.target.value))}
+                          className="text-right"
+                          placeholder="0.00"
+                        />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)} className="h-8 w-8 text-red-500 hover:text-red-700">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -507,6 +662,23 @@ export default function ServiceDetailPage() {
                 <Label>Discount (Rs)</Label>
                 <Input type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
               </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={applyTax}
+                    onChange={(e) => setApplyTax(e.target.checked)}
+                  />
+                  Apply GST
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  disabled={!applyTax}
+                  value={taxPercent}
+                  onChange={(e) => setTaxPercent(Number(e.target.value))}
+                />
+              </div>
             </div>
 
             {/* Totals Summary */}
@@ -514,16 +686,20 @@ export default function ServiceDetailPage() {
               {items.length > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Parts / Items Cost</span><span>{formatCurrency(partsCost)}</span></div>}
               {serviceCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Service Charge</span><span>{formatCurrency(serviceCharge)}</span></div>}
               {discount > 0 && <div className="flex justify-between text-red-600"><span>Discount</span><span>-{formatCurrency(discount)}</span></div>}
+              {applyTax && <div className="flex justify-between"><span className="text-muted-foreground">GST ({taxPercent}%)</span><span>{formatCurrency(taxAmount)}</span></div>}
               <div className="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total</span><span>{formatCurrency(Math.max(totalAmount, 0))}</span></div>
             </div>
 
-            <div className="flex gap-4">
-              <Button onClick={handleCompleteService} disabled={completing || !workDone.trim()}>{completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Mark Complete</Button>
+            <div className="flex gap-4 pt-4 border-t">
+              <Button onClick={handleCompleteService} disabled={completing || !workDone.trim()}>
+                {completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Mark Complete
+              </Button>
               <Button variant="outline" onClick={() => setShowCompleteForm(false)}>Cancel</Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

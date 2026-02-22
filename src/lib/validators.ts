@@ -18,7 +18,7 @@ export const customerSchema = z.object({
 export const serviceSchema = z.object({
   customer_id: z.string().uuid('Select a customer'),
   amc_contract_id: z.string().uuid().optional(),
-  service_type: z.enum(['amc_service', 'paid_service', 'installation']),
+  service_type: z.enum(['amc_service', 'paid_service', 'installation', 'free_service']),
   scheduled_date: z.string().min(1, 'Scheduled date is required'),
   scheduled_time_slot: z.string().optional(),
   description: z.string().optional(),
@@ -30,6 +30,8 @@ export const serviceCompleteSchema = z.object({
   work_done: z.string().min(5, 'Please describe the work done'),
   parts_cost: z.coerce.number().min(0).optional(),
   service_charge: z.coerce.number().min(0).optional(),
+  tax_percent: z.coerce.number().min(0).optional(),
+  tax_amount: z.coerce.number().min(0).optional(),
   total_amount: z.coerce.number().min(0).optional(),
   payment_status: z.enum(['not_applicable', 'pending', 'partial', 'paid']).optional(),
   technician_notes: z.string().optional(),
@@ -48,7 +50,7 @@ export const amcSchema = z.object({
 
 export const invoiceItemSchema = z.object({
   item_name: z.string().optional(),
-  description: z.string().min(1, 'Description is required'),
+  description: z.string().optional(),
   quantity: z.coerce.number().min(1),
   unit_price: z.coerce.number().min(0),
 });
@@ -61,6 +63,7 @@ export const invoiceSchema = z.object({
   discount_amount: z.coerce.number().min(0).optional(),
   notes: z.string().optional(),
   amc_enabled: z.boolean().optional(),
+  free_service_enabled: z.boolean().optional(),
   amc_period_months: z.coerce.number().min(1).optional(),
   items: z.array(invoiceItemSchema).min(1, 'Add at least one item'),
 });

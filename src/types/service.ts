@@ -1,7 +1,8 @@
 export type ServiceType =
   | 'amc_service'
   | 'paid_service'
-  | 'installation';
+  | 'installation'
+  | 'free_service';
 
 export type ServiceStatus =
   | 'scheduled'
@@ -38,15 +39,22 @@ export interface Service {
   parts_used: PartUsed[];
   parts_cost: number;
   service_charge: number;
+  tax_percent: number;
+  tax_amount: number;
   discount: number;
   total_amount: number;
   is_under_warranty: boolean;
   is_under_amc: boolean;
+  free_service_valid_until: string | null;
   payment_status: PaymentStatus;
   customer_feedback: string | null;
   customer_rating: number | null;
   technician_notes: string | null;
   created_by: string | null;
+  created_by_staff_id: string | null;
+  created_by_staff_name: string | null;
+  completed_by_staff_id: string | null;
+  completed_by_staff_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -92,6 +100,8 @@ export interface ServiceFormData {
   scheduled_time_slot?: string;
   description?: string;
   is_under_amc?: boolean;
+  created_by_staff_id?: string | null;
+  created_by_staff_name?: string | null;
 }
 
 export interface ServiceCompleteData {
@@ -100,6 +110,8 @@ export interface ServiceCompleteData {
   parts_used?: PartUsed[];
   parts_cost?: number;
   service_charge?: number;
+  tax_percent?: number;
+  tax_amount?: number;
   total_amount?: number;
   payment_status?: PaymentStatus;
   technician_notes?: string;

@@ -18,6 +18,11 @@ export type {
   InvoiceStatus,
   InvoiceWithDetails,
 } from './invoice';
+export type {
+  Expense,
+  ExpenseCategory,
+  ExpenseFormData,
+} from './expense';
 
 // Dashboard stats
 export interface DashboardStats {

@@ -17,6 +17,7 @@ interface SearchableSelectProps {
   searchPlaceholder?: string;
   className?: string;
   disabled?: boolean;
+  maxResults?: number;
 }
 
 export function SearchableSelect({
@@ -27,6 +28,7 @@ export function SearchableSelect({
   searchPlaceholder = 'Search...',
   className,
   disabled,
+  maxResults = 5,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
@@ -36,9 +38,27 @@ export function SearchableSelect({
   const selectedOption = options.find((o) => o.value === value);
 
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return options;
+    let results;
+    if (!search.trim()) {
+      results = options.slice(0, maxResults);
+    } else {
+      const q = search.toLowerCase();
+      const matches = options.filter((o) => o.label.toLowerCase().includes(q));
+      results = matches.slice(0, maxResults);
+    }
+    
+    // Always include the selected option if it exists and isn't already in results
+    if (selectedOption && !results.find(o => o.value === value)) {
+      results = [selectedOption, ...results].slice(0, maxResults);
+    }
+    
+    return results;
+  }, [options, search, maxResults, selectedOption, value]);
+
+  const totalMatches = React.useMemo(() => {
+    if (!search.trim()) return options.length;
     const q = search.toLowerCase();
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter((o) => o.label.toLowerCase().includes(q)).length;
   }, [options, search]);
 
   // Close on outside click
@@ -100,24 +120,31 @@ export function SearchableSelect({
             {filtered.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">No results found.</p>
             ) : (
-              filtered.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleSelect(option.value)}
-                  className={cn(
-                    'relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
-                    value === option.value && 'bg-accent'
-                  )}
-                >
-                  {value === option.value && (
-                    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-                      <Check className="h-4 w-4" />
-                    </span>
-                  )}
-                  {option.label}
-                </button>
-              ))
+              <>
+                {filtered.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleSelect(option.value)}
+                    className={cn(
+                      'relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
+                      value === option.value && 'bg-accent'
+                    )}
+                  >
+                    {value === option.value && (
+                      <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+                        <Check className="h-4 w-4" />
+                      </span>
+                    )}
+                    <span className="truncate">{option.label}</span>
+                  </button>
+                ))}
+                {totalMatches > filtered.length && (
+                  <p className="py-2 px-2 text-center text-xs text-muted-foreground border-t">
+                    Showing {filtered.length} of {totalMatches} results. Type to search more...
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>

@@ -81,10 +81,59 @@ export function getServiceTypeLabel(type: string): string {
     amc_service: 'AMC Service',
     paid_service: 'Paid Service',
     installation: 'Installation',
+    free_service: 'Free Service',
     complaint_service: 'Complaint Service',
     warranty_service: 'Warranty Service',
   };
   return labels[type] || type;
+}
+
+export function isFreeServiceActive(service: {
+  service_type?: string | null;
+  free_service_valid_until?: string | Date | null;
+  scheduled_date?: string | Date | null;
+  created_at?: string | Date | null;
+}): boolean {
+  if (service.service_type !== 'free_service') return false;
+
+  const expirySource = service.free_service_valid_until
+    ?? service.scheduled_date
+    ?? service.created_at;
+
+  if (!expirySource) return false;
+
+  let expiryDate = new Date(expirySource);
+  if (!service.free_service_valid_until) {
+    expiryDate = new Date(expiryDate);
+    expiryDate.setDate(expiryDate.getDate() + 365);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return expiryDate >= today;
+}
+
+export function getFreeServiceValidUntil(service: {
+  service_type?: string | null;
+  free_service_valid_until?: string | Date | null;
+  scheduled_date?: string | Date | null;
+  created_at?: string | Date | null;
+}): Date | null {
+  if (service.service_type !== 'free_service') return null;
+
+  const expirySource = service.free_service_valid_until
+    ?? service.scheduled_date
+    ?? service.created_at;
+
+  if (!expirySource) return null;
+
+  if (service.free_service_valid_until) {
+    return new Date(service.free_service_valid_until);
+  }
+
+  const computed = new Date(expirySource);
+  computed.setDate(computed.getDate() + 365);
+  return computed;
 }
 
 /**

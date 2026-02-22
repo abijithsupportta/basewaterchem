@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Calendar, AlertTriangle, Clock } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, getStatusColor, getEffectiveServiceStatus } from '@/lib/utils';
+import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -53,9 +53,23 @@ export default function UpcomingServicesPage() {
                     <Card className="hover:shadow-md transition-shadow border-orange-200">
                       <CardContent className="flex items-center justify-between p-4">
                         <div>
-                          <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                            {isFreeServiceActive(s) && (
+                              <>
+                                <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
+                                {getFreeServiceValidUntil(s) && (
+                                  <span className="text-xs text-muted-foreground">
+                                    Free until: {formatDate(getFreeServiceValidUntil(s)!)}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
-                            {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
+                            {s.service_type === 'free_service' && !isFreeServiceActive(s)
+                              ? 'Paid Service'
+                              : SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
                             {s.scheduled_time_slot && <> | {s.scheduled_time_slot}</>}
                           </p>
                         </div>
@@ -77,9 +91,23 @@ export default function UpcomingServicesPage() {
                     <Card className="hover:shadow-md transition-shadow">
                       <CardContent className="flex items-center justify-between p-4">
                         <div>
-                          <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                            {isFreeServiceActive(s) && (
+                              <>
+                                <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
+                                {getFreeServiceValidUntil(s) && (
+                                  <span className="text-xs text-muted-foreground">
+                                    Free until: {formatDate(getFreeServiceValidUntil(s)!)}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
-                            {formatDate(s.scheduled_date)} | {SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
+                            {formatDate(s.scheduled_date)} | {s.service_type === 'free_service' && !isFreeServiceActive(s)
+                              ? 'Paid Service'
+                              : SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | {(s.customer as any)?.city}
                           </p>
                         </div>
                         <Badge className={getStatusColor(getEffectiveServiceStatus(s.status, s.scheduled_date))}>{SERVICE_STATUS_LABELS[getEffectiveServiceStatus(s.status, s.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || s.status}</Badge>

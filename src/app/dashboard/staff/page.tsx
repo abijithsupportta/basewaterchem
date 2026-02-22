@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { Loading } from '@/components/ui/loading';
+import { canAccessStaffModule, canDelete } from '@/lib/authz';
 
 type RoleOption = (typeof STAFF_ROLES)[number]['value'];
 
@@ -16,41 +17,66 @@ type StaffItem = {
   full_name: string;
   email: string;
   role: RoleOption;
+  branch_id: string | null;
   is_active: boolean;
   phone: string | null;
   created_at: string;
   updated_at: string;
+  branch?: {
+    id: string;
+    branch_name: string;
+    branch_code: string;
+  };
+};
+
+type Branch = {
+  id: string;
+  branch_name: string;
+  branch_code: string;
 };
 
 export default function StaffPage() {
   const userRole = useUserRole();
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<RoleOption>('staff');
+  const [branchId, setBranchId] = useState<string>('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadStaff = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/staff');
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload?.error?.message || 'Failed to load staff');
+        const [staffResponse, branchesResponse] = await Promise.all([
+          fetch('/api/staff'),
+          fetch('/api/branches')
+        ]);
+        
+        const staffPayload = await staffResponse.json();
+        const branchesPayload = await branchesResponse.json();
+        
+        if (!staffResponse.ok) {
+          throw new Error(staffPayload?.error?.message || 'Failed to load staff');
         }
-        setStaffList(payload.data ?? []);
+        if (!branchesResponse.ok) {
+          throw new Error(branchesPayload?.error?.message || 'Failed to load branches');
+        }
+        
+        setStaffList(staffPayload.data ?? []);
+        setBranches(branchesPayload.data ?? []);
       } catch (error: any) {
-        toast.error(error.message || 'Failed to load staff');
+        toast.error(error.message || 'Failed to load data');
       } finally {
         setLoading(false);
       }
     };
 
-    if (userRole === 'admin') {
-      loadStaff();
+    if (canAccessStaffModule(userRole)) {
+      loadData();
     } else {
       setLoading(false);
     }
@@ -60,7 +86,7 @@ export default function StaffPage() {
     return <Loading />;
   }
 
-  if (userRole !== 'admin') {
+  if (!canAccessStaffModule(userRole)) {
     return <div className="p-8 text-center text-red-600">Access denied.</div>;
   }
 
@@ -80,6 +106,7 @@ export default function StaffPage() {
           email: email.trim(),
           phone: phone.trim() || null,
           role,
+          branch_id: branchId || null,
           is_active: true,
         }),
       });
@@ -94,6 +121,7 @@ export default function StaffPage() {
       setEmail('');
       setPhone('');
       setRole('staff');
+      setBranchId('');
       toast.success('Staff created successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to create staff');
@@ -156,12 +184,13 @@ export default function StaffPage() {
   return (
     <div className="space-y-4 p-4">
       <h1 className="text-2xl font-bold">Staff Management</h1>
-      <p>Only admin can access this module.</p>
+      <p>Manage staff members and their branch assignments.</p>
       <table className="w-full table-auto border-collapse border border-gray-200 text-sm">
         <thead>
           <tr>
             <th className="border p-2 text-left">Name</th>
             <th className="border p-2 text-left">Role</th>
+            <th className="border p-2 text-left">Branch</th>
             <th className="border p-2 text-left">Status</th>
             <th className="border p-2 text-left">Email</th>
             <th className="border p-2 text-left">Phone</th>
@@ -175,6 +204,9 @@ export default function StaffPage() {
             <tr key={staff.id}>
               <td className="border p-2">{staff.full_name}</td>
               <td className="border p-2">{staff.role}</td>
+              <td className="border p-2">
+                {staff.branch ? `${staff.branch.branch_name} (${staff.branch.branch_code})` : '-'}
+              </td>
               <td className="border p-2">{staff.is_active ? 'Active' : 'Inactive'}</td>
               <td className="border p-2">{staff.email}</td>
               <td className="border p-2">{staff.phone || '-'}</td>
@@ -191,15 +223,17 @@ export default function StaffPage() {
                   >
                     {staff.is_active ? 'Deactivate' : 'Activate'}
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    disabled={updatingId === staff.id}
-                    onClick={() => handleDeleteStaff(staff)}
-                  >
-                    Delete
-                  </Button>
+                  {canDelete(userRole) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={updatingId === staff.id}
+                      onClick={() => handleDeleteStaff(staff)}
+                    >
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -207,7 +241,7 @@ export default function StaffPage() {
         </tbody>
       </table>
       <form
-        className="grid grid-cols-1 gap-2 sm:grid-cols-4"
+        className="grid grid-cols-1 gap-2 sm:grid-cols-5"
         onSubmit={(e) => {
           e.preventDefault();
           handleAddStaff();
@@ -226,8 +260,20 @@ export default function StaffPage() {
             </option>
           ))}
         </select>
+        <select
+          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+          value={branchId}
+          onChange={(e) => setBranchId(e.target.value)}
+        >
+          <option value="">No Branch</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.branch_name} ({b.branch_code})
+            </option>
+          ))}
+        </select>
         <Input name="phone" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <div className="sm:col-span-4">
+        <div className="sm:col-span-5">
           <Button type="submit" disabled={submitting}>{submitting ? 'Adding...' : 'Add Staff'}</Button>
         </div>
       </form>

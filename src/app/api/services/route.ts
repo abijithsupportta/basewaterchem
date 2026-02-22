@@ -34,7 +34,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create services.' }, { status: 403 });
     }
 
-    const data = await repo.create(validated);
+    // Get staff details for tracking
+    let staffId: string | null = null;
+    let staffName: string | null = null;
+    if (user) {
+      const { data: staffData } = await supabase
+        .from('staff')
+        .select('id, full_name')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      
+      if (staffData) {
+        staffId = staffData.id;
+        staffName = staffData.full_name;
+      }
+    }
+
+    const data = await repo.create({
+      ...validated,
+      created_by_staff_id: staffId,
+      created_by_staff_name: staffName,
+    });
     return apiSuccess(data, 201);
   } catch (error) {
     return apiError(error);

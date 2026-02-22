@@ -13,6 +13,8 @@ export {
   isOverdue,
   isExpiringSoon,
   getServiceTypeLabel,
+  isFreeServiceActive,
+  getFreeServiceValidUntil,
   getStatusColor,
   getEffectiveServiceStatus,
   truncate,
