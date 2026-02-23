@@ -20,6 +20,8 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import { downloadDayBookPDF } from '@/lib/daybook-pdf';
 import { canAccessDashboard } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
+import { useUserRole } from '@/lib/use-user-role';
+import type { InventoryProduct } from '@/types/inventory';
 
 const TIME_CHIPS = [
   { value: 'today', label: 'Today' },
@@ -61,7 +63,10 @@ function getDateRange(period: string): { from?: string; to?: string } {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();  const { selectedBranchId } = useBranchSelection();  const [timeFilter, setTimeFilter] = useState('today');
+  const router = useRouter();
+  const { selectedBranchId } = useBranchSelection();
+  const userRole = useUserRole();
+  const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [services, setServices] = useState<any[]>([]);
@@ -70,6 +75,8 @@ export default function DashboardPage() {
   const [pendingPayments, setPendingPayments] = useState(0);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [staffId, setStaffId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Redirect staff away from dashboard
@@ -113,6 +120,49 @@ export default function DashboardPage() {
     setLoading(true);
     const supabase = createBrowserClient();
     const todayStr = new Date().toISOString().split('T')[0];
+
+    let currentStaffId: string | null = null;
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user) {
+      const { data: staffRow } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('auth_user_id', authData.user.id)
+        .maybeSingle();
+      currentStaffId = staffRow?.id ?? null;
+      setStaffId(currentStaffId);
+    }
+
+    if (userRole === 'technician') {
+      let techSrvQuery = supabase
+        .from('services')
+        .select('*, customer:customers(id, full_name, phone, customer_code, city)')
+        .eq('scheduled_date', todayStr)
+        .order('scheduled_date', { ascending: true });
+
+      if (currentStaffId) {
+        techSrvQuery = techSrvQuery.eq('assigned_technician_id', currentStaffId);
+      }
+
+      const [srvRes, stockRes] = await Promise.all([
+        techSrvQuery,
+        supabase
+          .from('inventory_products')
+          .select('id, name, stock_quantity, min_stock_level, unit_of_measure, is_active')
+          .eq('is_active', true)
+          .order('name', { ascending: true }),
+      ]);
+
+      setServices(srvRes.data || []);
+      setPendingServices([]);
+      setTotalCustomers(0);
+      setPendingPayments(0);
+      setInvoices([]);
+      setExpenses([]);
+      setInventoryProducts((stockRes.data as InventoryProduct[]) || []);
+      setLoading(false);
+      return;
+    }
 
     // Build services query - filtered by date range on scheduled_date AND branch
     let srvQuery = supabase
@@ -185,7 +235,7 @@ export default function DashboardPage() {
     setInvoices(invDataRes.data || []);
     setExpenses(expRes.data || []);
     setLoading(false);
-  }, [dateRange, selectedBranchId]);
+  }, [dateRange, selectedBranchId, userRole]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -312,6 +362,156 @@ export default function DashboardPage() {
     { title: 'Revenue', value: formatCurrency(stats.revenue), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
     { title: 'Pending Payments', value: pendingPayments, icon: CreditCard, color: 'text-rose-600', bg: 'bg-rose-50' },
   ];
+
+  const technicianDues = useMemo(() => {
+    return services.reduce((sum: number, s: any) => {
+      if (s.payment_status === 'paid') return sum;
+      const total = s.total_amount || 0;
+      const paid = s.amount_paid || 0;
+      return sum + Math.max(0, total - paid);
+    }, 0);
+  }, [services]);
+
+  const lowStockItems = useMemo(() => {
+    return inventoryProducts.filter((p) =>
+      typeof p.min_stock_level === 'number' && p.stock_quantity <= p.min_stock_level
+    );
+  }, [inventoryProducts]);
+
+  if (userRole === 'technician') {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Technician Dashboard</h1>
+          <p className="text-muted-foreground">Today&apos;s services and stock status</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card>
+            <CardContent className="flex items-center gap-4 p-5">
+              <div className="rounded-lg p-3 bg-blue-50">
+                <Wrench className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Today&apos;s Services</p>
+                <p className="text-xl font-bold">{loading ? '...' : services.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-4 p-5">
+              <div className="rounded-lg p-3 bg-amber-50">
+                <CreditCard className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Dues</p>
+                <p className="text-xl font-bold text-amber-700">{loading ? '...' : formatCurrency(technicianDues)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-4 p-5">
+              <div className="rounded-lg p-3 bg-red-50">
+                <AlertCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Low Stock</p>
+                <p className="text-xl font-bold text-red-700">{loading ? '...' : lowStockItems.length}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base">Today&apos;s Services</CardTitle>
+            <Link href="/dashboard/services">
+              <Button variant="ghost" size="sm">
+                View All <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Loading />
+            ) : services.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No services scheduled for today</p>
+            ) : (
+              <div className="space-y-2">
+                {services.map((service: any) => {
+                  const customer = service.customer as any;
+                  return (
+                    <Link
+                      key={service.id}
+                      href={`/dashboard/services/${service.id}`}
+                      className="block rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{customer?.full_name}</span>
+                            <Badge variant="outline" className="text-xs">{SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS]}</Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(service.scheduled_date)}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {customer?.phone}
+                            </span>
+                            {customer?.city && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {customer.city}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>
+                          {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || service.status}
+                        </Badge>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Stock Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Loading />
+            ) : lowStockItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">All stocks are above minimum levels.</p>
+            ) : (
+              <div className="space-y-2">
+                {lowStockItems.slice(0, 10).map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Min: {item.min_stock_level ?? 0}{item.unit_of_measure ? ` ${item.unit_of_measure}` : ''}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-red-600">
+                      {item.stock_quantity}{item.unit_of_measure ? ` ${item.unit_of_measure}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -282,22 +282,41 @@ export default function ServiceDetailPage() {
         inventory_product_id: i.inventory_product_id || null,
       }));
 
-      // Get staff details for tracking
-      let completedByStaffId: string | null = null;
-      let completedByStaffName: string | null = null;
-      const { data: authData } = await supabase.auth.getUser();
-      if (authData.user) {
-        const { data: staffData } = await supabase
-          .from('staff')
-          .select('id, full_name')
-          .eq('auth_user_id', authData.user.id)
-          .maybeSingle();
-        
-        if (staffData) {
-          completedByStaffId = staffData.id;
-          completedByStaffName = staffData.full_name;
+      // Get staff details for tracking (parallel with service update preparation)
+      const staffPromise = (async () => {
+        let completedByStaffId: string | null = null;
+        let completedByStaffName: string | null = null;
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData.user) {
+          const { data: staffData } = await supabase
+            .from('staff')
+            .select('id, full_name')
+            .eq('auth_user_id', authData.user.id)
+            .maybeSingle();
+          
+          if (staffData) {
+            completedByStaffId = staffData.id;
+            completedByStaffName = staffData.full_name;
+          }
         }
-      }
+        return { completedByStaffId, completedByStaffName };
+      })();
+
+      // Get AMC and existing services data in parallel if needed
+      const amcPromise = (async () => {
+        if (service.service_type === 'amc_service' && service.amc_contract_id) {
+          const [amcRes, existingRes] = await Promise.all([
+            supabase.from('amc_contracts').select('*').eq('id', service.amc_contract_id).single(),
+            supabase.from('services').select('id').eq('amc_contract_id', service.amc_contract_id)
+              .in('status', ['scheduled', 'assigned']).neq('id', id),
+          ]);
+          return { amc: amcRes.data, existing: existingRes.data };
+        }
+        return null;
+      })();
+
+      // Wait for staff data
+      const { completedByStaffId, completedByStaffName } = await staffPromise;
 
       const updateData: any = {
         status: 'completed',
@@ -313,79 +332,74 @@ export default function ServiceDetailPage() {
         completed_by_staff_id: completedByStaffId,
         completed_by_staff_name: completedByStaffName,
       };
+
+      // Main service update
       const { error } = await supabase.from('services').update(updateData).eq('id', id);
       if (error) throw error;
 
-      // Deduct stock for items from inventory (reuse completedByStaffId for stock transactions)
-      for (const item of items) {
-        if (item.inventory_product_id && item.qty > 0) {
-          try {
-            await supabase.rpc('log_stock_transaction', {
-              p_product_id: item.inventory_product_id,
-              p_transaction_type: 'service',
-              p_quantity: -item.qty,
-              p_reference_type: 'service',
-              p_reference_id: id,
-              p_notes: `Used in Service ${service.service_number || id}`,
-              p_created_by: completedByStaffId,
-            });
-          } catch (stockError) {
-            console.error('Error deducting stock:', stockError);
+      // Parallelize all non-blocking operations
+      const backgroundOps = [];
+
+      // 1. Deduct stock in parallel for all items
+      const stockPromises = items
+        .filter((item) => item.inventory_product_id && item.qty > 0)
+        .map((item) =>
+          supabase.rpc('log_stock_transaction', {
+            p_product_id: item.inventory_product_id,
+            p_transaction_type: 'service',
+            p_quantity: -item.qty,
+            p_reference_type: 'service',
+            p_reference_id: id,
+            p_notes: `Used in Service ${service.service_number || id}`,
+            p_created_by: completedByStaffId,
+          }).catch((err) => {
+            console.error('Error deducting stock:', err);
             toast.error(`Warning: Stock not deducted for ${item.part_name}`);
-          }
-        }
-      }
+          })
+        );
 
-      // If this is an AMC service, schedule the next one automatically
-      if (service.service_type === 'amc_service' && service.amc_contract_id) {
-        const { data: amcData } = await supabase.from('amc_contracts')
-          .select('*')
-          .eq('id', service.amc_contract_id)
-          .single();
+      // 2. Handle AMC scheduling in background
+      const amcOp = (async () => {
+        const amcData = await amcPromise;
+        if (!amcData) return;
 
-        if (amcData && amcData.status === 'active') {
-          // Check if a scheduled/assigned service already exists for this AMC (prevent duplicates)
-          const { data: existingServices } = await supabase.from('services')
-            .select('id')
-            .eq('amc_contract_id', service.amc_contract_id)
-            .in('status', ['scheduled', 'assigned'])
-            .neq('id', id);
+        const { amc: amcContract, existing: existingServices } = amcData;
 
+        if (amcContract && amcContract.status === 'active') {
+          const intervalMonths = amcContract.service_interval_months || 3;
+          const completedDate = new Date();
+          completedDate.setHours(0, 0, 0, 0);
+          const nextDate = new Date(completedDate);
+          nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+          const nextDateStr = nextDate.toISOString().split('T')[0];
+          
           if (!existingServices || existingServices.length === 0) {
-            // Next service = completion date (today) + cycle period
-            const intervalMonths = amcData.service_interval_months || 3;
-            const completedDate = new Date();
-            completedDate.setHours(0, 0, 0, 0);
-            const nextDate = new Date(completedDate);
-            nextDate.setMonth(nextDate.getMonth() + intervalMonths);
-            const nextDateStr = nextDate.toISOString().split('T')[0];
-            const freeValidUntil = amcData.start_date ? new Date(amcData.start_date) : null;
+            const freeValidUntil = amcContract.start_date ? new Date(amcContract.start_date) : null;
             if (freeValidUntil) {
               freeValidUntil.setDate(freeValidUntil.getDate() + 365);
             }
 
-            // Update AMC contract: increment services_completed, set next_service_date, extend end_date
-            await supabase.from('amc_contracts').update({
-              services_completed: (amcData.services_completed || 0) + 1,
-              next_service_date: nextDateStr,
-              end_date: nextDateStr,
-            }).eq('id', service.amc_contract_id);
+            // Parallelize AMC update and service creation
+            await Promise.all([
+              supabase.from('amc_contracts').update({
+                services_completed: (amcContract.services_completed || 0) + 1,
+                next_service_date: nextDateStr,
+                end_date: nextDateStr,
+              }).eq('id', service.amc_contract_id),
+              supabase.from('services').insert({
+                customer_id: service.customer_id,
+                amc_contract_id: service.amc_contract_id,
+                service_type: 'amc_service',
+                status: 'scheduled',
+                scheduled_date: nextDateStr,
+                description: `AMC service - ${amcContract.contract_number || 'Recurring'}`,
+                is_under_amc: true,
+                payment_status: 'not_applicable',
+                free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
+              }),
+            ]);
 
-            // Create the next scheduled AMC service
-            await supabase.from('services').insert({
-              customer_id: service.customer_id,
-              amc_contract_id: service.amc_contract_id,
-              service_type: 'amc_service',
-              status: 'scheduled',
-              scheduled_date: nextDateStr,
-              description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
-              is_under_amc: true,
-              payment_status: 'not_applicable',
-              free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
-            });
-
-            toast.success(`Service completed! Next service scheduled for ${nextDateStr}`);
-            // Notify: next service scheduled
+            // Notify in background
             const custNext = service.customer as any;
             if (custNext?.email) {
               notifyCustomer('service_scheduled', {
@@ -394,24 +408,20 @@ export default function ServiceDetailPage() {
                 serviceNumber: `Next Service`,
                 serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
                 scheduledDate: nextDateStr,
-                description: `Recurring service - ${amcData.contract_number || 'Scheduled'}`,
-              });
+                description: `Recurring service - ${amcContract.contract_number || 'Scheduled'}`,
+              }).catch(console.error);
             }
           } else {
-            // Just update services_completed count
             await supabase.from('amc_contracts').update({
-              services_completed: (amcData.services_completed || 0) + 1,
+              services_completed: (amcContract.services_completed || 0) + 1,
             }).eq('id', service.amc_contract_id);
-            toast.success('Service completed!');
           }
-        } else {
-          toast.success('Service completed!');
         }
-      } else {
-        toast.success('Service completed!');
-      }
+      })();
 
-      // Notify: service completed
+      backgroundOps.push(...stockPromises, amcOp);
+
+      // 3. Send completion notification in background (don't await)
       const custComplete = service.customer as any;
       if (custComplete?.email) {
         notifyCustomer('service_completed', {
@@ -422,11 +432,19 @@ export default function ServiceDetailPage() {
           completedDate: updateData.completed_date,
           workDone: workDone,
           totalAmount: Math.max(totalAmount, 0),
-        });
+        }).catch(console.error);
       }
 
+      // Update UI immediately (don't wait for background ops)
       setService((s: any) => ({ ...s, ...updateData }));
       setShowCompleteForm(false);
+      toast.success('Service completed!');
+
+      // Process background operations without blocking
+      Promise.all(backgroundOps).catch((err) => {
+        console.error('Background operations error:', err);
+      });
+
     } catch (error: any) {
       toast.error(error.message || 'Failed to complete');
     } finally {
