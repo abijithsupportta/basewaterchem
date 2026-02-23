@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useUserRole } from '@/lib/use-user-role';
-import { STAFF_ROLES } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -10,14 +9,21 @@ import { Loading } from '@/components/ui/loading';
 import { canAccessStaffModule, canDelete } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 
-type RoleOption = (typeof STAFF_ROLES)[number]['value'];
+// Only allow adding these roles (no admin/superadmin)
+const ADDABLE_STAFF_ROLES = [
+  { value: 'manager', label: 'Manager' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'technician', label: 'Technician' },
+];
+
+type RoleOption = typeof ADDABLE_STAFF_ROLES[number]['value'];
 
 type StaffItem = {
   id: string;
   auth_user_id?: string | null;
   full_name: string;
   email: string;
-  role: RoleOption;
+  role: RoleOption | 'admin' | 'superadmin';
   branch_id: string | null;
   is_active: boolean;
   phone: string | null;
@@ -43,31 +49,34 @@ export default function StaffPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<RoleOption>('staff');
   const [branchId, setBranchId] = useState<string>('');
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
       try {
         const [staffResponse, branchesResponse] = await Promise.all([
           fetch('/api/staff'),
-          fetch('/api/branches')
+          fetch('/api/branches'),
         ]);
-        
+
         const staffPayload = await staffResponse.json();
         const branchesPayload = await branchesResponse.json();
-        
+
         if (!staffResponse.ok) {
           throw new Error(staffPayload?.error?.message || 'Failed to load staff');
         }
         if (!branchesResponse.ok) {
           throw new Error(branchesPayload?.error?.message || 'Failed to load branches');
         }
-        
+
         setStaffList(staffPayload.data ?? []);
         setBranches(branchesPayload.data ?? []);
       } catch (error: any) {
@@ -97,7 +106,17 @@ export default function StaffPage() {
       ? staffList
       : staffList.filter((staff) => staff.branch_id === selectedBranchId);
 
-  const handleAddStaff = async () => {
+  const resetForm = () => {
+    setName('');
+    setEmail('');
+    setPhone('');
+    setRole('staff');
+    setBranchId('');
+    setShowAddModal(false);
+  };
+
+  const handleAddStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!name.trim() || !email.trim()) {
       toast.error('Name and email are required');
       return;
@@ -124,12 +143,8 @@ export default function StaffPage() {
       }
 
       setStaffList((prev) => [payload.data, ...prev]);
-      setName('');
-      setEmail('');
-      setPhone('');
-      setRole('staff');
-      setBranchId('');
       toast.success('Staff created successfully');
+      resetForm();
     } catch (error: any) {
       toast.error(error.message || 'Failed to create staff');
     } finally {
@@ -152,7 +167,7 @@ export default function StaffPage() {
       }
 
       setStaffList((prev) => prev.map((s) => (s.id === staff.id ? payload.data : s)));
-      toast.success(makeActive ? 'Staff activated successfully' : 'Staff deactivated successfully');
+      toast.success(makeActive ? 'Staff activated' : 'Staff deactivated');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update staff status');
     } finally {
@@ -180,7 +195,7 @@ export default function StaffPage() {
       }
 
       setStaffList((prev) => prev.filter((s) => s.id !== staff.id));
-      toast.success('Staff deleted from database and auth');
+      toast.success('Staff deleted');
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete staff');
     } finally {
@@ -189,101 +204,219 @@ export default function StaffPage() {
   };
 
   return (
-    <div className="space-y-4 p-4">
-      <h1 className="text-2xl font-bold">Staff Management</h1>
-      <p>Manage staff members and their branch assignments.</p>
-      <table className="w-full table-auto border-collapse border border-gray-200 text-sm">
-        <thead>
-          <tr>
-            <th className="border p-2 text-left">Name</th>
-            <th className="border p-2 text-left">Role</th>
-            <th className="border p-2 text-left">Branch</th>
-            <th className="border p-2 text-left">Status</th>
-            <th className="border p-2 text-left">Email</th>
-            <th className="border p-2 text-left">Phone</th>
-            <th className="border p-2 text-left">Created</th>
-            <th className="border p-2 text-left">Updated</th>
-            <th className="border p-2 text-left">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredStaffList.map((staff) => (
-            <tr key={staff.id}>
-              <td className="border p-2">{staff.full_name}</td>
-              <td className="border p-2">{staff.role}</td>
-              <td className="border p-2">
-                {staff.branch ? `${staff.branch.branch_name} (${staff.branch.branch_code})` : '-'}
-              </td>
-              <td className="border p-2">{staff.is_active ? 'Active' : 'Inactive'}</td>
-              <td className="border p-2">{staff.email}</td>
-              <td className="border p-2">{staff.phone || '-'}</td>
-              <td className="border p-2">{new Date(staff.created_at).toLocaleDateString()}</td>
-              <td className="border p-2">{new Date(staff.updated_at).toLocaleDateString()}</td>
-              <td className="border p-2">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={updatingId === staff.id}
-                    onClick={() => handleToggleStaff(staff, !staff.is_active)}
-                  >
-                    {staff.is_active ? 'Deactivate' : 'Activate'}
-                  </Button>
-                  {canDelete(userRole) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={updatingId === staff.id}
-                      onClick={() => handleDeleteStaff(staff)}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <form
-        className="grid grid-cols-1 gap-2 sm:grid-cols-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleAddStaff();
-        }}
-      >
-        <Input name="name" placeholder="Name" required value={name} onChange={(e) => setName(e.target.value)} />
-        <Input name="email" type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        <select
-          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={role}
-          onChange={(e) => setRole(e.target.value as RoleOption)}
-        >
-          {STAFF_ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={branchId}
-          onChange={(e) => setBranchId(e.target.value)}
-        >
-          <option value="">No Branch</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.branch_name} ({b.branch_code})
-            </option>
-          ))}
-        </select>
-        <Input name="phone" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <div className="sm:col-span-5">
-          <Button type="submit" disabled={submitting}>{submitting ? 'Adding...' : 'Add Staff'}</Button>
+    <div className="space-y-6 p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Staff Management</h1>
+          <p className="mt-1 text-sm text-gray-500">Manage staff members and their branch assignments.</p>
         </div>
-      </form>
+        <Button onClick={() => setShowAddModal(true)} className="bg-blue-600 hover:bg-blue-700">
+          + Add Staff
+        </Button>
+      </div>
+
+      {/* Staff List */}
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        {filteredStaffList.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <p>No staff members found. Click "Add Staff" to create one.</p>
+          </div>
+        ) : (
+          <table className="w-full table-auto border-collapse text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50">
+                <th className="p-3 text-left font-medium text-gray-700">Name</th>
+                <th className="p-3 text-left font-medium text-gray-700">Email</th>
+                <th className="p-3 text-left font-medium text-gray-700">Role</th>
+                <th className="p-3 text-left font-medium text-gray-700">Branch</th>
+                <th className="p-3 text-left font-medium text-gray-700">Phone</th>
+                <th className="p-3 text-left font-medium text-gray-700">Status</th>
+                <th className="p-3 text-left font-medium text-gray-700">Created</th>
+                <th className="p-3 text-left font-medium text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredStaffList.map((staff) => (
+                <tr key={staff.id} className="border-b hover:bg-gray-50">
+                  <td className="p-3 font-medium">{staff.full_name}</td>
+                  <td className="p-3 text-gray-600">{staff.email}</td>
+                  <td className="p-3 capitalize">
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium">
+                      {staff.role}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    {staff.branch ? (
+                      <span className="text-gray-700">
+                        {staff.branch.branch_name} ({staff.branch.branch_code})
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="p-3 text-gray-600">{staff.phone || '-'}</td>
+                  <td className="p-3">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-medium ${
+                        staff.is_active
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {staff.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-s text-gray-500">
+                    {new Date(staff.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={updatingId === staff.id}
+                        onClick={() => handleToggleStaff(staff, !staff.is_active)}
+                      >
+                        {staff.is_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                      {canDelete(userRole) && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={updatingId === staff.id}
+                          onClick={() => handleDeleteStaff(staff)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Add Staff Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold">Add New Staff</h2>
+              <p className="mt-1 text-sm text-gray-500">Only Manager, Staff, and Technician roles can be added.</p>
+            </div>
+
+            <form onSubmit={handleAddStaff} className="space-y-4">
+              {/* Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Full Name *</label>
+                <Input
+                  type="text"
+                  placeholder="Enter full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className="mt-1"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Email Address *</label>
+                <Input
+                  type="email"
+                  placeholder="Enter email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="mt-1"
+                />
+              </div>
+
+              {/* Role */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Role *</label>
+                <select
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as RoleOption)}
+                >
+                  {ADDABLE_STAFF_ROLES.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Branch */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Assign to Branch (Optional)</label>
+                <select
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                >
+                  <option value="">-- No Branch Assigned --</option>
+                  {branches.length === 0 ? (
+                    <option disabled>No branches available</option>
+                  ) : (
+                    branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.branch_name} ({b.branch_code})
+                      </option>
+                    ))
+                  )}
+                </select>
+                {branches.length === 0 && (
+                  <p className="mt-1 text-xs text-orange-600">⚠️ No branches available. Create a branch first.</p>
+                )}
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Phone (Optional)</label>
+                <Input
+                  type="tel"
+                  placeholder="Enter phone number"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetForm}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                >
+                  {submitting ? 'Adding...' : 'Add Staff'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Backdrop Click Handler */}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={resetForm}
+        />
+      )}
     </div>
   );
 }

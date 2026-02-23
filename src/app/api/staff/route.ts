@@ -3,7 +3,8 @@ import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supab
 import { canDelete, canManageStaff, type StaffRole } from '@/lib/authz';
 import { apiSuccess, apiError } from '@/core/api';
 
-const ALLOWED_STAFF_ROLES: StaffRole[] = ['admin', 'manager', 'staff', 'technician'];
+// Only allow adding these roles (no admin or superadmin)
+const ALLOWED_STAFF_ROLES: StaffRole[] = ['manager', 'staff', 'technician'];
 
 async function getCurrentUserRole() {
   const supabase = await createServerSupabaseClient();
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
     const requestedRole = (body.role as StaffRole | undefined) ?? 'staff';
     if (!ALLOWED_STAFF_ROLES.includes(requestedRole)) {
       return Response.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid staff role.' } },
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid staff role. Only Manager, Staff, and Technician roles can be added.' } },
         { status: 400 }
       );
     }
