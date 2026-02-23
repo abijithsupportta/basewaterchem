@@ -15,6 +15,12 @@ export interface Customer {
   notes: string | null;
   is_active: boolean;
   created_by: string | null;
+  branch_id?: string | null;
+  branch?: {
+    id: string;
+    branch_name: string;
+    branch_code: string;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +38,7 @@ export interface CustomerFormData {
   pincode?: string;
   location_landmark?: string;
   notes?: string;
+  branch_id?: string | null;
 }
 
 export interface CustomerWithProducts extends Customer {

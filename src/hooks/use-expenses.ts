@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ExpenseRepository } from '@/infrastructure/repositories/expense.repository';
 import type { Expense, ExpenseFormData } from '@/types/expense';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 export function useExpenses(filters?: { from?: string; to?: string; category?: string }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -12,11 +13,15 @@ export function useExpenses(filters?: { from?: string; to?: string; category?: s
 
   const supabase = createClient();
   const repo = useMemo(() => new ExpenseRepository(supabase), [supabase]);
+  const { selectedBranchId } = useBranchSelection();
 
   const fetchExpenses = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await repo.findAll(filters);
+      const { data } = await repo.findAll({
+        ...filters,
+        branchId: selectedBranchId,
+      });
       setExpenses(data);
       setError(null);
     } catch (err: unknown) {
@@ -24,7 +29,7 @@ export function useExpenses(filters?: { from?: string; to?: string; category?: s
     } finally {
       setLoading(false);
     }
-  }, [repo, filters?.from, filters?.to, filters?.category]);
+  }, [repo, selectedBranchId, filters?.from, filters?.to, filters?.category]);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 

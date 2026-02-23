@@ -5,30 +5,53 @@ import type { Invoice, InvoiceFormData, InvoiceWithDetails, InvoiceItemFormData 
 const INVOICE_LIST_SELECT = `
   *,
   customer:customers (id, full_name, phone, email, address_line1, city, customer_code),
+  branch:branches (id, branch_name, branch_code),
   items:invoice_items (*)
 `;
 
 export class InvoiceRepository {
   constructor(private readonly db: SupabaseClient) {}
 
-  async findAll(filters?: { status?: string; customerId?: string }) {
+  async findAll(filters?: {
+    status?: string;
+    customerId?: string;
+    branchId?: string;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+  }) {
     let query = this.db
       .from('invoices')
-      .select(INVOICE_LIST_SELECT)
+      .select(INVOICE_LIST_SELECT, { count: 'exact' })
       .order('created_at', { ascending: false });
 
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
+    if (filters?.branchId && filters.branchId !== 'all') query = query.eq('branch_id', filters.branchId);
+    if (filters?.dateFrom) query = query.gte('invoice_date', filters.dateFrom);
+    if (filters?.dateTo) query = query.lte('invoice_date', filters.dateTo);
+    if (filters?.search) {
+      const q = filters.search.replace(/%/g, '\\%');
+      query = query.or(
+        `invoice_number.ilike.%${q}%,customer.full_name.ilike.%${q}%,customer.customer_code.ilike.%${q}%`
+      );
+    }
+    
+    if (filters?.limit && filters?.offset !== undefined) {
+      query = query.range(filters.offset, filters.offset + filters.limit - 1);
+    }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw new DatabaseError(error.message);
-    return (data || []) as InvoiceWithDetails[];
+    return { data: (data || []) as InvoiceWithDetails[], count: count || 0 };
   }
 
   async findById(id: string) {
     const { data, error } = await this.db
       .from('invoices')
-      .select(`*, customer:customers (*), items:invoice_items (*)`)
+      .select(`*, customer:customers (*), branch:branches (id, branch_name, branch_code), items:invoice_items (*)`)
       .eq('id', id)
       .single();
 
@@ -40,7 +63,7 @@ export class InvoiceRepository {
     const { data, error } = await this.db
       .from('invoices')
       .insert(invoiceData)
-      .select()
+      .select(`*, customer:customers (id, full_name, phone, email, address_line1, city, customer_code), branch:branches (id, branch_name, branch_code)`)
       .single();
 
     if (error) throw new DatabaseError(error.message);

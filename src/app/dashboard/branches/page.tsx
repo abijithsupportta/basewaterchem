@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Branch } from '@/types/branch';
@@ -26,7 +26,6 @@ export default function BranchesPage() {
 
   useEffect(() => {
     if (!canManageBranches(userRole)) {
-      toast.error('Access denied');
       return;
     }
     fetchBranches();
@@ -37,28 +36,67 @@ export default function BranchesPage() {
       const supabase = createBrowserClient();
       const { data, error } = await supabase
         .from('branches')
-        .select('*, manager:staff(id, full_name, email)')
+        .select('*')
         .order('branch_name');
 
       if (error) throw error;
-      setBranches(data || []);
+
+      const branchRows = (data || []) as Branch[];
+      const managerIds = Array.from(
+        new Set(branchRows.map((branch) => branch.manager_id).filter(Boolean))
+      ) as string[];
+
+      if (managerIds.length === 0) {
+        setBranches(branchRows);
+        return;
+      }
+
+      const { data: managerRows, error: managerError } = await supabase
+        .from('staff')
+        .select('id, full_name, email')
+        .in('id', managerIds);
+
+      if (managerError) throw managerError;
+
+      const managerMap = new Map(
+        (managerRows || []).map((manager) => [manager.id, manager])
+      );
+
+      setBranches(
+        branchRows.map((branch) => ({
+          ...branch,
+          manager: branch.manager_id ? managerMap.get(branch.manager_id) : undefined,
+        }))
+      );
     } catch (error) {
       console.error('Error fetching branches:', error);
-      toast.error('Failed to load branches');
+      const errorMessage =
+        typeof error === 'object' && error && 'message' in error
+          ? String((error as { message?: string }).message)
+          : 'Failed to load branches';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this branch?')) return;
+    const target = branches.find((branch) => branch.id === id);
+    if (target?.branch_code === 'HO') {
+      toast.error('Head Office branch cannot be deleted');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Delete "${target?.branch_name}"? All customers, invoices, services, and other data from this branch will be reassigned to Head Office branch.`
+    );
+    if (!confirmed) return;
 
     try {
       const supabase = createBrowserClient();
       const { error } = await supabase.from('branches').delete().eq('id', id);
 
       if (error) throw error;
-      toast.success('Branch deleted');
+      toast.success(`Branch "${target?.branch_name}" deleted. All data reassigned to Head Office.`);
       setBranches(branches.filter((b) => b.id !== id));
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete branch');
@@ -82,12 +120,8 @@ export default function BranchesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Branches</h1>
-          <p className="text-muted-foreground">{branches.length} branches</p>
-        </div>
+        <h1 className="text-2xl font-bold">Branches</h1>
         <Button onClick={() => { setEditingBranch(null); setShowForm(true); }}>
           <Plus className="mr-2 h-4 w-4" /> Add Branch
         </Button>
@@ -134,12 +168,6 @@ export default function BranchesPage() {
                   <p className="text-sm">✉️ {branch.email}</p>
                 )}
 
-                {branch.manager && (
-                  <p className="text-sm text-muted-foreground">
-                    Manager: {branch.manager.full_name}
-                  </p>
-                )}
-
                 <div className="flex gap-2 pt-2 border-t">
                   <Button
                     size="sm"
@@ -156,6 +184,7 @@ export default function BranchesPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={branch.branch_code === 'HO'}
                       onClick={() => handleDelete(branch.id)}
                     >
                       <Trash2 className="h-3 w-3" />
@@ -169,18 +198,25 @@ export default function BranchesPage() {
       )}
 
       {showForm && (
-        <BranchForm
-          branch={editingBranch}
-          onClose={() => {
-            setShowForm(false);
-            setEditingBranch(null);
-          }}
-          onSave={() => {
-            fetchBranches();
-            setShowForm(false);
-            setEditingBranch(null);
-          }}
-        />
+        <Dialog open={showForm} onOpenChange={setShowForm}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingBranch ? 'Edit' : 'Add'} Branch</DialogTitle>
+            </DialogHeader>
+            <BranchForm
+              branch={editingBranch}
+              onClose={() => {
+                setShowForm(false);
+                setEditingBranch(null);
+              }}
+              onSave={() => {
+                fetchBranches();
+                setShowForm(false);
+                setEditingBranch(null);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
@@ -188,7 +224,6 @@ export default function BranchesPage() {
 
 function BranchForm({ branch, onClose, onSave }: { branch: Branch | null; onClose: () => void; onSave: () => void }) {
   const [saving, setSaving] = useState(false);
-  const [managers, setManagers] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     branch_code: branch?.branch_code || '',
     branch_name: branch?.branch_name || '',
@@ -198,23 +233,8 @@ function BranchForm({ branch, onClose, onSave }: { branch: Branch | null; onClos
     pincode: branch?.pincode || '',
     phone: branch?.phone || '',
     email: branch?.email || '',
-    manager_id: branch?.manager_id || '',
     is_active: branch?.is_active ?? true,
   });
-
-  useEffect(() => {
-    const fetchManagers = async () => {
-      const supabase = createBrowserClient();
-      const { data } = await supabase
-        .from('staff')
-        .select('id, full_name, email')
-        .in('role', ['manager', 'admin'])
-        .eq('is_active', true);
-     
-      setManagers(data || []);
-    };
-    fetchManagers();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -245,125 +265,102 @@ function BranchForm({ branch, onClose, onSave }: { branch: Branch | null; onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-      <Card className="w-full max-w-2xl">
-        <CardContent className="p-6">
-          <h2 className="text-xl font-bold mb-4">{branch ? 'Edit' : 'Add'} Branch</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Branch Code *</Label>
-                <Input
-                  value={formData.branch_code}
-                  onChange={(e) => setFormData({ ...formData, branch_code: e.target.value })}
-                  placeholder="BR001"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Branch Name *</Label>
-                <Input
-                  value={formData.branch_name}
-                  onChange={(e) => setFormData({ ...formData, branch_name: e.target.value })}
-                  placeholder="Main Branch"
-                  required
-                />
-              </div>
-            </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Branch Code *</Label>
+          <Input
+            value={formData.branch_code}
+            onChange={(e) => setFormData({ ...formData, branch_code: e.target.value })}
+            placeholder="BR001"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Branch Name *</Label>
+          <Input
+            value={formData.branch_name}
+            onChange={(e) => setFormData({ ...formData, branch_name: e.target.value })}
+            placeholder="Main Branch"
+            required
+          />
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <Label>Address</Label>
-              <Input
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="Street address"
-              />
-            </div>
+      <div className="space-y-2">
+        <Label>Address</Label>
+        <Input
+          value={formData.address}
+          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+          placeholder="Street address"
+        />
+      </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>City</Label>
-                <Input
-                  value={formData.city}
-                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  placeholder="City"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>State</Label>
-                <Input
-                  value={formData.state}
-                  onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                  placeholder="State"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Pincode</Label>
-                <Input
-                  value={formData.pincode}
-                  onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                  placeholder="686001"
-                />
-              </div>
-            </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label>City</Label>
+          <Input
+            value={formData.city}
+            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+            placeholder="City"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>State</Label>
+          <Input
+            value={formData.state}
+            onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+            placeholder="State"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Pincode</Label>
+          <Input
+            value={formData.pincode}
+            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+            placeholder="686001"
+          />
+        </div>
+      </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+91 9876543210"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="branch@example.com"
-                />
-              </div>
-            </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Phone</Label>
+          <Input
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            placeholder="+91 9876543210"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Email</Label>
+          <Input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="branch@example.com"
+          />
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <Label>Branch Manager</Label>
-              <select
-                className="w-full rounded-md border p-2"
-                value={formData.manager_id}
-                onChange={(e) => setFormData({ ...formData, manager_id: e.target.value })}
-              >
-                <option value="">Select manager...</option>
-                {managers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.full_name} - {m.email}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={formData.is_active}
+          onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+          className="h-4 w-4"
+        />
+        <Label>Active</Label>
+      </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                className="h-4 w-4"
-              />
-              <Label>Active</Label>
-            </div>
-
-            <div className="flex gap-4 pt-4 border-t">
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+      <div className="flex gap-4 pt-4 border-t">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

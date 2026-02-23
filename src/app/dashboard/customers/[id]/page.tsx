@@ -5,16 +5,16 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Edit, Phone, Mail, MapPin,
-  Wrench, Plus, FileText, Package
+  Wrench, Plus, FileText, Package, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, formatPhone } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +23,8 @@ export default function CustomerDetailPage() {
   const [services, setServices] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
+  const [amcContracts, setAmcContracts] = useState<any[]>([]);
+  const [endingAmc, setEndingAmc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,10 +32,11 @@ export default function CustomerDetailPage() {
     const supabase = createBrowserClient();
     const fetchAll = async () => {
       setLoading(true);
-      const [custRes, srvRes, invRes] = await Promise.all([
+      const [custRes, srvRes, invRes, amcRes] = await Promise.all([
         supabase.from('customers').select('*').eq('id', id).single(),
         supabase.from('services').select('*').eq('customer_id', id).order('scheduled_date', { ascending: false }).limit(10),
         supabase.from('invoices').select('*, items:invoice_items(*)').eq('customer_id', id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('amc_contracts').select('*, invoice:invoices(invoice_number, invoice_date)').eq('customer_id', id).order('created_at', { ascending: false }),
       ]);
       if (custRes.data) setCustomer(custRes.data);
       if (srvRes.data) setServices(srvRes.data);
@@ -47,6 +50,7 @@ export default function CustomerDetailPage() {
         })));
         setInvoiceItems(allItems);
       }
+      if (amcRes.data) setAmcContracts(amcRes.data);
       setLoading(false);
     };
     fetchAll();
@@ -62,12 +66,54 @@ export default function CustomerDetailPage() {
     );
   }
 
+  const handleEndAmc = async (amcId: string) => {
+    if (!window.confirm('Mark this AMC as completed? No more recurring services will be scheduled.')) return;
+    
+    setEndingAmc(amcId);
+    try {
+      const supabase = createBrowserClient();
+      const { error } = await supabase
+        .from('amc_contracts')
+        .update({ status: 'completed', end_date: new Date().toISOString().split('T')[0] })
+        .eq('id', amcId);
+      
+      if (error) throw error;
+      
+      setAmcContracts(amcContracts.map(amc => 
+        amc.id === amcId ? { ...amc, status: 'completed', end_date: new Date().toISOString().split('T')[0] } : amc
+      ));
+      toast.success('AMC marked as completed');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to end AMC');
+    } finally {
+      setEndingAmc(null);
+    }
+  };
+
+  const getAmcProgress = (amc: any) => {
+    // Count completed/in_progress services for this AMC
+    const completedCount = services.filter(s => 
+      s.amc_contract_id === amc.id && ['completed', 'in_progress'].includes(s.status)
+    ).length;
+    const totalServices = amc.total_services_included || 1;
+    return { completedCount, totalServices };
+  };
+
+  const getAmcEndDate = (amc: any) => {
+    if (amc.end_date) return amc.end_date;
+    if (amc.next_service_date) return amc.next_service_date;
+    // Calculate expected end based on interval
+    const start = new Date(amc.start_date);
+    const months = amc.service_interval_months * (amc.total_services_included || 1);
+    start.setMonth(start.getMonth() + months);
+    return start.toISOString().split('T')[0];
+  };
+
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/customers')}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-2xl font-bold">{customer.full_name}</h1>
             <p className="text-muted-foreground">{customer.customer_code}</p>
@@ -121,6 +167,110 @@ export default function CustomerDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* AMC Services */}
+      {amcContracts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" /> Recurring Services (AMC) - {amcContracts.filter(a => a.status === 'active').length} Active
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {amcContracts.map((amc: any) => {
+              const { completedCount, totalServices } = getAmcProgress(amc);
+              const progress = (completedCount / totalServices) * 100;
+              const expectedEnd = getAmcEndDate(amc);
+              const isExpired = new Date(expectedEnd) < new Date() && amc.status === 'active';
+
+              return (
+                <div key={amc.id} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-medium">Invoice: {amc.invoice?.invoice_number || amc.invoice_id}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {amc.service_interval_months}-month interval • {amc.total_services_included} total services
+                      </p>
+                    </div>
+                    <Badge 
+                      variant={amc.status === 'active' ? 'default' : 'secondary'}
+                      className={isExpired ? 'bg-red-600' : ''}
+                    >
+                      {amc.status === 'active' && isExpired ? 'Expired' : (amc.status === 'completed' ? 'Completed' : 'Active')}
+                    </Badge>
+                  </div>
+
+                  {/* Service Progress */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Services Completed</span>
+                      <span className="text-sm font-medium">{completedCount} / {totalServices}</span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all" 
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dates */}
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Started</p>
+                      <p className="font-medium">{formatDate(amc.start_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Next Service</p>
+                      <p className="font-medium">{formatDate(amc.next_service_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Expected End</p>
+                      <p className={`font-medium ${isExpired ? 'text-red-600' : ''}`}>
+                        {formatDate(expectedEnd)}
+                        {isExpired && <span className="ml-1 text-xs">⚠️</span>}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Amount */}
+                  <div className="text-sm">
+                    <p className="text-muted-foreground">Contract Amount</p>
+                    <p className="font-medium text-lg">{formatCurrency(amc.amount)}</p>
+                  </div>
+
+                  {/* Actions */}
+                  {amc.status === 'active' && (
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => router.push(`/dashboard/services?amc=${amc.id}`)}
+                      >
+                        View Services
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive"
+                        onClick={() => handleEndAmc(amc.id)}
+                        disabled={endingAmc === amc.id}
+                      >
+                        {endingAmc === amc.id ? 'Ending...' : 'End AMC'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {amc.status === 'completed' && amc.end_date && (
+                    <p className="text-sm text-muted-foreground">
+                      Completed on {formatDate(amc.end_date)}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">

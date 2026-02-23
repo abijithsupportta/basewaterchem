@@ -18,8 +18,8 @@ import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, 
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { downloadDayBookPDF } from '@/lib/daybook-pdf';
-import { useUserRole } from '@/lib/use-user-role';
 import { canAccessDashboard } from '@/lib/authz';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 const TIME_CHIPS = [
   { value: 'today', label: 'Today' },
@@ -61,9 +61,7 @@ function getDateRange(period: string): { from?: string; to?: string } {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const userRole = useUserRole();
-  const [timeFilter, setTimeFilter] = useState('today');
+  const router = useRouter();  const { selectedBranchId } = useBranchSelection();  const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [services, setServices] = useState<any[]>([]);
@@ -76,10 +74,33 @@ export default function DashboardPage() {
 
   // Redirect staff away from dashboard
   useEffect(() => {
-    if (userRole && !canAccessDashboard(userRole)) {
-      router.push('/dashboard/services');
-    }
-  }, [userRole, router]);
+    let cancelled = false;
+
+    const resolveRoleAndRedirect = async () => {
+      const supabase = createBrowserClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user || cancelled) return;
+
+      const { data: staff } = await supabase
+        .from('staff')
+        .select('role')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle();
+
+      const metadataRole = data.user.user_metadata?.role as string | undefined;
+      const effectiveRole = (staff?.role || metadataRole || 'staff') as any;
+
+      if (!cancelled && effectiveRole && !canAccessDashboard(effectiveRole)) {
+        router.push('/dashboard/services');
+      }
+    };
+
+    resolveRoleAndRedirect();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -93,35 +114,42 @@ export default function DashboardPage() {
     const supabase = createBrowserClient();
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Build services query - filtered by date range on scheduled_date
+    // Build services query - filtered by date range on scheduled_date AND branch
     let srvQuery = supabase
       .from('services')
       .select('*, customer:customers(id, full_name, phone, customer_code, city)')
       .order('scheduled_date', { ascending: false });
 
+    if (selectedBranchId && selectedBranchId !== 'all') srvQuery = srvQuery.eq('branch_id', selectedBranchId);
     if (dateRange.from) srvQuery = srvQuery.gte('scheduled_date', dateRange.from);
     if (dateRange.to) srvQuery = srvQuery.lte('scheduled_date', dateRange.to);
 
     // Pending services: past scheduled date, not completed/cancelled
-    const pendingQuery = supabase
+    let pendingQuery = supabase
       .from('services')
       .select('*, customer:customers(id, full_name, phone, customer_code, city)')
       .in('status', ['scheduled', 'assigned', 'in_progress'])
       .lt('scheduled_date', todayStr)
       .order('scheduled_date', { ascending: true });
 
+    if (selectedBranchId && selectedBranchId !== 'all') pendingQuery = pendingQuery.eq('branch_id', selectedBranchId);
+
     // Total customers
-    const custQuery = supabase
+    let custQuery = supabase
       .from('customers')
       .select('id', { count: 'exact', head: true });
 
+    if (selectedBranchId && selectedBranchId !== 'all') custQuery = custQuery.eq('branch_id', selectedBranchId);
+
     // Pending invoice payments count
-    const invCountQuery = supabase
+    let invCountQuery = supabase
       .from('invoices')
       .select('id', { count: 'exact', head: true })
       .in('status', ['sent', 'partial', 'overdue']);
 
-    // All invoices (for payment analytics, filtered by invoice_date)
+    if (selectedBranchId && selectedBranchId !== 'all') invCountQuery = invCountQuery.eq('branch_id', selectedBranchId);
+
+    // All invoices (for payment analytics, filtered by invoice_date AND branch)
     let invDataQuery = supabase
       .from('invoices')
       .select('id, invoice_number, status, total_amount, amount_paid, balance_due, payment_method, payment_date, invoice_date, customer:customers(full_name)');
@@ -130,6 +158,11 @@ export default function DashboardPage() {
       .from('expenses')
       .select('id, expense_date, title, category, amount, payment_method, description')
       .order('expense_date', { ascending: false });
+
+    if (selectedBranchId && selectedBranchId !== 'all') {
+      invDataQuery = invDataQuery.eq('branch_id', selectedBranchId);
+      expenseQuery = expenseQuery.eq('branch_id', selectedBranchId);
+    }
 
     if (dateRange.from) invDataQuery = invDataQuery.gte('invoice_date', dateRange.from);
     if (dateRange.to) invDataQuery = invDataQuery.lte('invoice_date', dateRange.to);
@@ -152,7 +185,7 @@ export default function DashboardPage() {
     setInvoices(invDataRes.data || []);
     setExpenses(expRes.data || []);
     setLoading(false);
-  }, [dateRange]);
+  }, [dateRange, selectedBranchId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

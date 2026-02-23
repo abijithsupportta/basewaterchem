@@ -5,7 +5,7 @@
 
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format, formatDistanceToNow, isAfter, isBefore, addMonths } from 'date-fns';
+import { format, formatDistanceToNow, isAfter, isBefore, addMonths, differenceInCalendarDays } from 'date-fns';
 
 /**
  * Merge CSS classes with Tailwind priority
@@ -94,23 +94,19 @@ export function isFreeServiceActive(service: {
   scheduled_date?: string | Date | null;
   created_at?: string | Date | null;
 }): boolean {
-  if (service.service_type !== 'free_service') return false;
-
-  const expirySource = service.free_service_valid_until
-    ?? service.scheduled_date
-    ?? service.created_at;
-
-  if (!expirySource) return false;
-
-  let expiryDate = new Date(expirySource);
-  if (!service.free_service_valid_until) {
-    expiryDate = new Date(expiryDate);
-    expiryDate.setDate(expiryDate.getDate() + 365);
-  }
+  const expiryDate = getFreeServiceValidUntil(service);
+  if (!expiryDate) return false;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return expiryDate >= today;
+  const serviceDate = service.scheduled_date
+    ?? service.created_at
+    ?? today;
+
+  const serviceDay = new Date(serviceDate);
+  serviceDay.setHours(0, 0, 0, 0);
+
+  return expiryDate >= today && serviceDay <= expiryDate;
 }
 
 export function getFreeServiceValidUntil(service: {
@@ -119,21 +115,35 @@ export function getFreeServiceValidUntil(service: {
   scheduled_date?: string | Date | null;
   created_at?: string | Date | null;
 }): Date | null {
-  if (service.service_type !== 'free_service') return null;
-
-  const expirySource = service.free_service_valid_until
-    ?? service.scheduled_date
-    ?? service.created_at;
-
-  if (!expirySource) return null;
-
   if (service.free_service_valid_until) {
     return new Date(service.free_service_valid_until);
   }
 
+  if (service.service_type !== 'free_service') return null;
+
+  const expirySource = service.scheduled_date
+    ?? service.created_at;
+
+  if (!expirySource) return null;
+
   const computed = new Date(expirySource);
   computed.setDate(computed.getDate() + 365);
   return computed;
+}
+
+export function getFreeServiceDaysLeft(service: {
+  free_service_valid_until?: string | Date | null;
+  service_type?: string | null;
+  scheduled_date?: string | Date | null;
+  created_at?: string | Date | null;
+}): number | null {
+  const expiryDate = getFreeServiceValidUntil(service);
+  if (!expiryDate) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = differenceInCalendarDays(expiryDate, today);
+  return Math.max(0, diff);
 }
 
 /**

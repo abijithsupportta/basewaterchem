@@ -9,6 +9,7 @@ export class ExpenseRepository {
     from?: string;
     to?: string;
     category?: string;
+    branchId?: string;
     page?: number;
     limit?: number;
     offset?: number;
@@ -22,6 +23,7 @@ export class ExpenseRepository {
     if (filters?.from) query = query.gte('expense_date', filters.from);
     if (filters?.to) query = query.lte('expense_date', filters.to);
     if (filters?.category) query = query.eq('category', filters.category);
+    if (filters?.branchId && filters.branchId !== 'all') query = query.eq('branch_id', filters.branchId);
     if (filters?.offset !== undefined && filters?.limit !== undefined) {
       query = query.range(filters.offset, filters.offset + filters.limit - 1);
     }

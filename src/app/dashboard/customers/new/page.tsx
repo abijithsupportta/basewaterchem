@@ -10,14 +10,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { customerSchema } from '@/lib/validators';
 import { useCustomers } from '@/hooks/use-customers';
+import { useBranches } from '@/hooks/use-branches';
 import type { CustomerFormData } from '@/types';
 
 export default function NewCustomerPage() {
   const router = useRouter();
   const { createCustomer } = useCustomers();
+  const { branches, getDefaultBranch } = useBranches();
+  const defaultBranch = getDefaultBranch();
+  const sanitizePhone = (value: string) => value.replace(/\D/g, '').slice(0, 10);
   const {
     register,
     handleSubmit,
@@ -25,6 +28,7 @@ export default function NewCustomerPage() {
   } = useForm<CustomerFormData>({
     resolver: zodResolver(customerSchema),
     defaultValues: {
+      branch_id: defaultBranch?.id || '',
       city: 'Kottayam',
       district: 'Kottayam',
       state: 'Kerala',
@@ -43,7 +47,6 @@ export default function NewCustomerPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div>
         <h1 className="text-2xl font-bold">New Customer</h1>
         <p className="text-muted-foreground">Add a new customer to the system</p>
@@ -57,6 +60,23 @@ export default function NewCustomerPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="branch_id">Branch *</Label>
+                <select
+                  id="branch_id"
+                  {...register('branch_id')}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">Select branch...</option>
+                  {branches?.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.branch_name}
+                    </option>
+                  ))}
+                </select>
+                {errors.branch_id && <p className="text-sm text-destructive">{errors.branch_id.message}</p>}
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="full_name">Full Name *</Label>
                 <Input id="full_name" {...register('full_name')} placeholder="Customer full name" />
                 {errors.full_name && <p className="text-sm text-destructive">{errors.full_name.message}</p>}
@@ -64,13 +84,37 @@ export default function NewCustomerPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone *</Label>
-                <Input id="phone" {...register('phone')} placeholder="10-digit phone number" />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">+91</span>
+                  <Input
+                    id="phone"
+                    inputMode="numeric"
+                    maxLength={10}
+                    className="pl-12"
+                    placeholder="10-digit phone number"
+                    {...register('phone', {
+                      setValueAs: (value) => sanitizePhone(String(value || '')),
+                    })}
+                  />
+                </div>
                 {errors.phone && <p className="text-sm text-destructive">{errors.phone.message}</p>}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="alt_phone">Alt Phone</Label>
-                <Input id="alt_phone" {...register('alt_phone')} placeholder="Alternative number" />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">+91</span>
+                  <Input
+                    id="alt_phone"
+                    inputMode="numeric"
+                    maxLength={10}
+                    className="pl-12"
+                    placeholder="Alternative number"
+                    {...register('alt_phone', {
+                      setValueAs: (value) => sanitizePhone(String(value || '')),
+                    })}
+                  />
+                </div>
               </div>
 
               <div className="space-y-2 sm:col-span-2">

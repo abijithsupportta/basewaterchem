@@ -15,7 +15,7 @@ import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil } from '@/lib/utils';
+import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceDaysLeft, getFreeServiceValidUntil } from '@/lib/utils';
 import { DEFAULT_TAX_PERCENT, SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
@@ -42,6 +42,11 @@ export default function ServiceDetailPage() {
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>([]);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTimeSlot, setRescheduleTimeSlot] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Completion form state
   const [workDone, setWorkDone] = useState('');
@@ -118,6 +123,12 @@ export default function ServiceDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    if (!service) return;
+    setRescheduleDate(service.scheduled_date || '');
+    setRescheduleTimeSlot(service.scheduled_time_slot || '');
+  }, [service]);
+
+  useEffect(() => {
     if (!service || !showCompleteForm) return;
     const existingTaxPercent = Number(service.tax_percent || 0);
     setApplyTax(existingTaxPercent > 0);
@@ -189,6 +200,10 @@ export default function ServiceDetailPage() {
             const nextDate = new Date(today);
             nextDate.setMonth(nextDate.getMonth() + intervalMonths);
             const nextDateStr = nextDate.toISOString().split('T')[0];
+            const freeValidUntil = amcData.start_date ? new Date(amcData.start_date) : null;
+            if (freeValidUntil) {
+              freeValidUntil.setDate(freeValidUntil.getDate() + 365);
+            }
 
             await supabase.from('amc_contracts').update({
               services_completed: (amcData.services_completed || 0) + 1,
@@ -205,6 +220,7 @@ export default function ServiceDetailPage() {
               description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
               is_under_amc: true,
               payment_status: 'not_applicable',
+              free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
             });
 
             toast.success(`Marked as done! Next service scheduled for ${nextDateStr}`);
@@ -343,6 +359,10 @@ export default function ServiceDetailPage() {
             const nextDate = new Date(completedDate);
             nextDate.setMonth(nextDate.getMonth() + intervalMonths);
             const nextDateStr = nextDate.toISOString().split('T')[0];
+            const freeValidUntil = amcData.start_date ? new Date(amcData.start_date) : null;
+            if (freeValidUntil) {
+              freeValidUntil.setDate(freeValidUntil.getDate() + 365);
+            }
 
             // Update AMC contract: increment services_completed, set next_service_date, extend end_date
             await supabase.from('amc_contracts').update({
@@ -361,6 +381,7 @@ export default function ServiceDetailPage() {
               description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
               is_under_amc: true,
               payment_status: 'not_applicable',
+              free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
             });
 
             toast.success(`Service completed! Next service scheduled for ${nextDateStr}`);
@@ -413,6 +434,57 @@ export default function ServiceDetailPage() {
     }
   };
 
+  const handleReschedule = async () => {
+    if (!rescheduleDate) {
+      toast.error('Please select a date');
+      return;
+    }
+    setRescheduling(true);
+    try {
+      const supabase = createBrowserClient();
+      const { error } = await supabase
+        .from('services')
+        .update({
+          scheduled_date: rescheduleDate,
+          scheduled_time_slot: rescheduleTimeSlot || null,
+        })
+        .eq('id', id);
+      if (error) throw error;
+      setService((prev: any) => ({
+        ...prev,
+        scheduled_date: rescheduleDate,
+        scheduled_time_slot: rescheduleTimeSlot || null,
+      }));
+      toast.success('Service rescheduled');
+      setShowReschedule(false);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to reschedule');
+    } finally {
+      setRescheduling(false);
+    }
+  };
+
+  const handleDeleteService = async () => {
+    if (userRole !== 'superadmin') {
+      toast.error('Only superadmin can delete scheduled services');
+      return;
+    }
+    const confirmed = window.confirm('Delete this scheduled service?');
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { error } = await supabase.from('services').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Service deleted');
+      router.push('/dashboard/services');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete service');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <Loading />;
   if (!service) {
     return (
@@ -444,7 +516,7 @@ export default function ServiceDetailPage() {
               <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
               {getFreeServiceValidUntil(service) && (
                 <span className="text-xs text-muted-foreground">
-                  Free until: {formatDate(getFreeServiceValidUntil(service)!)}
+                  {Math.max(0, getFreeServiceDaysLeft(service) ?? 0)} days left
                 </span>
               )}
             </div>
@@ -455,6 +527,17 @@ export default function ServiceDetailPage() {
           <Button variant="outline" onClick={handleDownloadServicePdf}>
             <Download className="mr-2 h-4 w-4" /> Download PDF
           </Button>
+          {userRole === 'superadmin' && (service.status === 'scheduled' || service.status === 'assigned') && (
+            <Button variant="outline" onClick={() => setShowReschedule(true)}>
+              <Calendar className="mr-2 h-4 w-4" /> Reschedule
+            </Button>
+          )}
+          {userRole === 'superadmin' && service.status === 'scheduled' && (
+            <Button variant="destructive" onClick={handleDeleteService} disabled={deleting}>
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
+            </Button>
+          )}
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}
           {service.status === 'scheduled' && service.service_type === 'amc_service' && (
             <Button variant="secondary" onClick={handleMarkAsDone} disabled={markingDone}>
@@ -696,6 +779,32 @@ export default function ServiceDetailPage() {
                 Mark Complete
               </Button>
               <Button variant="outline" onClick={() => setShowCompleteForm(false)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reschedule Dialog */}
+      <Dialog open={showReschedule} onOpenChange={setShowReschedule}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reschedule Service</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Scheduled Date</Label>
+              <Input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Time Slot</Label>
+              <Input value={rescheduleTimeSlot} onChange={(e) => setRescheduleTimeSlot(e.target.value)} placeholder="Morning / Afternoon / Evening" />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" onClick={handleReschedule} disabled={rescheduling}>
+                {rescheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowReschedule(false)}>Cancel</Button>
             </div>
           </div>
         </DialogContent>

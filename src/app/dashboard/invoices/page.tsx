@@ -1,15 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Receipt, Calendar } from 'lucide-react';
+import { Plus, Receipt, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { useInvoices } from '@/hooks/use-invoices';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
@@ -17,12 +16,17 @@ import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
 
 export default function InvoicesPage() {
-  const { invoices, loading } = useInvoices();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, dateFilter, customStartDate, customEndDate, pageSize]);
 
   const getDateRange = (filter: DateFilter) => {
     const now = new Date();
@@ -64,31 +68,32 @@ export default function InvoicesPage() {
     }
   };
 
-  const filtered = invoices.filter((inv: any) => {
-    const matchesSearch = !search ||
-      inv.invoice_number?.toLowerCase().includes(search.toLowerCase()) ||
-      (inv.customer as any)?.full_name?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
-    
-    let matchesDate = true;
-    if (dateFilter !== 'all') {
-      const dateRange = getDateRange(dateFilter);
-      if (dateRange) {
-        const invoiceDate = new Date(inv.invoice_date);
-        matchesDate = invoiceDate >= dateRange.start && invoiceDate <= dateRange.end;
-      } else {
-        matchesDate = false;
-      }
-    }
-    
-    return matchesSearch && matchesStatus && matchesDate;
+  const dateRange = useMemo(() => {
+    const range = getDateRange(dateFilter);
+    if (!range) return null;
+    return {
+      start: range.start.toISOString().split('T')[0],
+      end: range.end.toISOString().split('T')[0],
+    };
+  }, [dateFilter, customStartDate, customEndDate]);
+
+  const { invoices, loading, totalCount } = useInvoices({
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    search: search || undefined,
+    dateFrom: dateRange?.start,
+    dateTo: dateRange?.end,
+    page,
+    pageSize,
   });
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endIndex = Math.min(page * pageSize, totalCount);
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">Invoices</h1><p className="text-muted-foreground">{filtered.length} of {invoices.length} invoices</p></div>
+        <h1 className="text-2xl font-bold">Invoices</h1>
         <Link href="/dashboard/invoices/new"><Button><Plus className="mr-2 h-4 w-4" /> New Invoice</Button></Link>
       </div>
 
@@ -198,25 +203,29 @@ export default function InvoicesPage() {
         </select>
       </div>
 
-      {loading ? <Loading /> : filtered.length === 0 ? (
+      {loading ? <Loading /> : invoices.length === 0 ? (
         <Card><CardContent className="flex flex-col items-center justify-center py-12">
           <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">No invoices found</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {filtered
-            .sort((a: any, b: any) => new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime())
-            .map((inv: any) => (
+          {invoices.map((inv: any) => (
             <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="flex items-center justify-between p-4">
-                  <div>
-                    <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <p className="font-medium">{inv.invoice_number}</p>
                       <span className="text-sm text-muted-foreground">•</span>
                       <p className="text-sm">{(inv.customer as any)?.full_name}</p>
                       {inv.amc_enabled && <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">AMC</Badge>}
+                      {(inv.branch as any) && (
+                        <>
+                          <span className="text-sm text-muted-foreground">•</span>
+                          <Badge variant="outline" className="gap-1 text-xs"><Building2 className="h-3 w-3" /> {(inv.branch as any)?.branch_name}</Badge>
+                        </>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
                       {formatDate(inv.invoice_date)} | Total: {formatCurrency(inv.total_amount)} | Paid: {formatCurrency(inv.amount_paid)}
@@ -230,6 +239,30 @@ export default function InvoicesPage() {
           ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <p className="text-sm text-muted-foreground">
+          Showing {startIndex}-{endIndex} of {totalCount}
+        </p>
+        <div className="flex items-center gap-2">
+          <select
+            className="rounded-md border px-2 py-1 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <span className="text-sm">Page {page} of {totalPages}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

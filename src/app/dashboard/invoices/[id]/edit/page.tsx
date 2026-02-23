@@ -1,11 +1,11 @@
 'use client';
 
 import { Suspense, useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Loading } from '@/components/ui/loading';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Plus, Trash2, UserPlus, Package } from 'lucide-react';
+import { Loader2, Plus, Trash2, Package, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,50 +19,43 @@ import { useCustomers } from '@/hooks/use-customers';
 import { useBranches } from '@/hooks/use-branches';
 import { formatCurrency } from '@/lib/utils';
 import { DEFAULT_TAX_PERCENT } from '@/lib/constants';
-import { notifyCustomer } from '@/lib/notify-client';
+import { createBrowserClient } from '@/lib/supabase/client';
 import { InventoryProduct } from '@/types/inventory';
 
-export default function NewInvoicePage() {
-  return <Suspense fallback={<Loading />}><NewInvoiceContent /></Suspense>;
+// Export default to match page component pattern
+export default function EditInvoicePage() {
+  return <Suspense fallback={<Loading />}><EditInvoiceContent /></Suspense>;
 }
 
-function NewInvoiceContent() {
+function EditInvoiceContent() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const preselectedCustomer = searchParams.get('customer') || '';
   const { customers, createCustomer } = useCustomers();
-  const { branches, getDefaultBranch, loading: branchesLoading } = useBranches();
+  const { branches } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>([]);
-
-  // Quick-add customer state
+  const [existingInvoice, setExistingInvoice] = useState<{ amountPaid: number; status: string }>({ amountPaid: 0, status: 'draft' });
+  const [loading, setLoading] = useState(true);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
-  const [newCust, setNewCust] = useState({ full_name: '', phone: '', email: '', address_line1: '', city: '', district: '', state: 'Kerala', pincode: '' });
-
-  // Fetch inventory products
-  useEffect(() => {
-    const fetchInventory = async () => {
-      try {
-        const res = await fetch('/api/inventory/products?active_only=true');
-        if (res.ok) {
-          const data = await res.json();
-          setInventoryProducts(data);
-        }
-      } catch (error) {
-        console.error('Error fetching inventory:', error);
-      }
-    };
-    fetchInventory();
-  }, []);
+  const [newCust, setNewCust] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    address_line1: '',
+    city: '',
+    district: '',
+    state: 'Kerala',
+    pincode: '',
+  });
 
   const {
-    register, handleSubmit, setValue, watch, control,
+    register, handleSubmit, setValue, watch, control, reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      customer_id: preselectedCustomer,
+      customer_id: '',
       branch_id: '',
       invoice_date: new Date().toISOString().split('T')[0],
       tax_percent: DEFAULT_TAX_PERCENT,
@@ -74,31 +67,75 @@ function NewInvoiceContent() {
     },
   });
 
-  // Set default branch when branches load
-  useEffect(() => {
-    if (!branchesLoading && branches.length > 0) {
-      const defaultBranch = getDefaultBranch();
-      if (defaultBranch) {
-        setValue('branch_id', defaultBranch.id);
-      }
-    }
-  }, [branchesLoading, branches, getDefaultBranch, setValue]);
-
-  // Set preselected customer when customers load
-  useEffect(() => {
-    if (preselectedCustomer && customers.length > 0) {
-      setValue('customer_id', preselectedCustomer);
-    }
-  }, [preselectedCustomer, customers, setValue]);
-
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
 
-  // Initialize source type for first item
   useEffect(() => {
     if (itemSourceTypes.length === 0) {
       setItemSourceTypes(['manual']);
     }
   }, [itemSourceTypes.length]);
+
+  // Fetch inventory and invoice data
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // Fetch inventory products
+        const res = await fetch('/api/inventory/products?active_only=true');
+        if (res.ok) {
+          const data = await res.json();
+          setInventoryProducts(data);
+        }
+
+        // Fetch invoice and items
+        if (id) {
+          const supabase = createBrowserClient();
+          const [invRes, itemRes] = await Promise.all([
+            supabase.from('invoices').select('*').eq('id', id).single(),
+            supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
+          ]);
+
+          if (invRes.data) {
+            const inv = invRes.data;
+            const loadedItems = itemRes.data?.map((item: any) => ({
+              item_name: item.item_name || '',
+              description: item.description || '',
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              inventory_product_id: item.inventory_product_id || null,
+            })) || [];
+
+            setExistingInvoice({
+              amountPaid: Number(inv.amount_paid || 0),
+              status: String(inv.status || 'draft'),
+            });
+
+            reset({
+              customer_id: inv.customer_id,
+              branch_id: inv.branch_id,
+              invoice_date: inv.invoice_date,
+              tax_percent: inv.tax_percent || DEFAULT_TAX_PERCENT,
+              discount_amount: inv.discount_amount || 0,
+              notes: inv.notes || '',
+              amc_enabled: Boolean(inv.amc_enabled),
+              amc_period_months: inv.amc_period_months || 3,
+              items: loadedItems.length > 0 ? loadedItems : [{ item_name: '', description: '', quantity: 1, unit_price: 0, inventory_product_id: null }],
+            });
+
+            // Set source types - if has inventory_product_id then 'stock', else 'manual'
+            setItemSourceTypes(loadedItems.map((item: any) => item.inventory_product_id ? 'stock' : 'manual'));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading invoice:', error);
+        toast.error('Failed to load invoice');
+        router.push('/dashboard/invoices');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [id, reset, router]);
 
   const handleAddItem = () => {
     append({ item_name: '', description: '', quantity: 1, unit_price: 0, inventory_product_id: null });
@@ -111,11 +148,10 @@ function NewInvoiceContent() {
   };
 
   const handleSourceTypeChange = (index: number, type: 'manual' | 'stock') => {
-    const newTypes = [...itemSourceTypes];
-    newTypes[index] = type;
-    setItemSourceTypes(newTypes);
+    const updatedTypes = [...itemSourceTypes];
+    updatedTypes[index] = type;
+    setItemSourceTypes(updatedTypes);
 
-    // Reset item fields when switching
     if (type === 'manual') {
       setValue(`items.${index}.inventory_product_id`, null);
       setValue(`items.${index}.item_name`, '');
@@ -149,37 +185,36 @@ function NewInvoiceContent() {
 
   const onSubmit = async (data: any) => {
     try {
-      const supabase = (await import('@/lib/supabase/client')).createBrowserClient();
-      const { items: itemsData, amc_enabled, amc_period_months, ...invoiceData } = data;
+      const supabase = createBrowserClient();
+      const { items: itemsData, ...invoiceData } = data;
 
-      let createdByStaffId: string | null = null;
-      const { data: authData } = await supabase.auth.getUser();
-      if (authData.user) {
-        const { data: staff } = await supabase
-          .from('staff')
-          .select('id')
-          .eq('auth_user_id', authData.user.id)
-          .maybeSingle();
-        createdByStaffId = staff?.id ?? null;
-      }
+      const amountPaid = Math.max(0, existingInvoice.amountPaid || 0);
+      const balanceDue = Math.max(0, total - amountPaid);
+      const nextStatus = balanceDue <= 0
+        ? 'paid'
+        : amountPaid > 0
+          ? 'partial'
+          : existingInvoice.status;
 
-      // Create the invoice
-      const { data: invoice, error } = await supabase.from('invoices').insert({
+      // Update invoice
+      const { error: invError } = await supabase.from('invoices').update({
         ...invoiceData,
         subtotal,
         tax_amount: taxAmount,
         total_amount: total,
-        balance_due: total,
-        amc_enabled: amc_enabled || false,
-        amc_period_months: amc_enabled ? amc_period_months : null,
-        created_by_staff_id: createdByStaffId,
-      }).select().single();
-      if (error) throw error;
+        amount_paid: Math.min(amountPaid, total),
+        balance_due: balanceDue,
+        status: nextStatus,
+      }).eq('id', id);
+      if (invError) throw invError;
 
-      // Create invoice items
+      // Delete existing items
+      await supabase.from('invoice_items').delete().eq('invoice_id', id);
+
+      // Create new items
       if (itemsData.length > 0) {
         const itemsToInsert = itemsData.map((item: any, idx: number) => ({
-          invoice_id: invoice.id,
+          invoice_id: id,
           item_name: item.item_name || null,
           description: item.description,
           quantity: item.quantity,
@@ -188,9 +223,22 @@ function NewInvoiceContent() {
           inventory_product_id: item.inventory_product_id || null,
           sort_order: idx,
         }));
+
         await supabase.from('invoice_items').insert(itemsToInsert);
 
-        // Deduct stock for items from inventory
+        // Handle stock transactions for changed items
+        const { data: authData } = await supabase.auth.getUser();
+        let createdByStaffId: string | null = null;
+        if (authData.user) {
+          const { data: staff } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('auth_user_id', authData.user.id)
+            .maybeSingle();
+          createdByStaffId = staff?.id ?? null;
+        }
+
+        // Deduct stock for new stock items
         for (const item of itemsData) {
           if (item.inventory_product_id && item.quantity > 0) {
             try {
@@ -199,8 +247,8 @@ function NewInvoiceContent() {
                 p_transaction_type: 'sale',
                 p_quantity: -item.quantity,
                 p_reference_type: 'invoice',
-                p_reference_id: invoice.id,
-                p_notes: `Sold via Invoice ${invoice.invoice_number || invoice.id}`,
+                p_reference_id: id,
+                p_notes: `Sold via Invoice Update`,
                 p_created_by: createdByStaffId,
               });
             } catch (stockError) {
@@ -211,68 +259,14 @@ function NewInvoiceContent() {
         }
       }
 
-      // If AMC enabled, create AMC contract and schedule first service
-      if (amc_enabled && amc_period_months) {
-        const invoiceDate = new Date(invoiceData.invoice_date || new Date());
-        const firstServiceDate = new Date(invoiceDate);
-        firstServiceDate.setMonth(firstServiceDate.getMonth() + amc_period_months);
-        const freeServiceValidUntil = new Date(invoiceDate);
-        freeServiceValidUntil.setDate(freeServiceValidUntil.getDate() + 365);
-
-        // Create AMC contract with next_service_date
-        const { data: amcContract, error: amcError } = await supabase.from('amc_contracts').insert({
-          customer_id: invoiceData.customer_id,
-          invoice_id: invoice.id,
-          start_date: invoiceDate.toISOString().split('T')[0],
-          end_date: firstServiceDate.toISOString().split('T')[0],
-          service_interval_months: amc_period_months,
-          total_services_included: 1,
-          services_completed: 0,
-          amount: total,
-          is_paid: false,
-          status: 'active',
-          next_service_date: firstServiceDate.toISOString().split('T')[0],
-        }).select().single();
-        if (amcError) throw amcError;
-
-        // Create scheduled AMC service at first service date
-        const { error: srvError } = await supabase.from('services').insert({
-          customer_id: invoiceData.customer_id,
-          amc_contract_id: amcContract.id,
-          service_type: 'amc_service',
-          status: 'scheduled',
-          scheduled_date: firstServiceDate.toISOString().split('T')[0],
-          description: `AMC service - Invoice ${invoice.invoice_number || 'N/A'}`,
-          is_under_amc: true,
-          payment_status: 'not_applicable',
-          free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
-        });
-        if (srvError) throw srvError;
-
-        // Notify customer about scheduled recurring service
-        const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
-        if (selectedCust?.email) {
-          notifyCustomer('service_scheduled', {
-            customerEmail: selectedCust.email,
-            customerName: selectedCust.full_name,
-            serviceNumber: invoice.invoice_number || 'New Service',
-            serviceType: 'Recurring Service',
-            scheduledDate: firstServiceDate.toISOString().split('T')[0],
-            description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,
-          });
-        }
-      }
-
-      toast.success(
-        amc_enabled
-          ? 'Invoice created with recurring service setup!'
-          : 'Invoice created!'
-      );
-      router.push(`/dashboard/invoices/${invoice.id}`);
+      toast.success('Invoice updated!');
+      router.push(`/dashboard/invoices/${id}`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create invoice');
+      toast.error(error.message || 'Failed to update invoice');
     }
   };
+
+  if (loading) return <Loading />;
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));
   const amcPeriodOptions = [
@@ -312,7 +306,7 @@ function NewInvoiceContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">New Invoice</h1>
+      <h1 className="text-2xl font-bold">Edit Invoice</h1>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card className="max-w-3xl">
           <CardHeader><CardTitle>Invoice Details</CardTitle></CardHeader>
@@ -333,7 +327,6 @@ function NewInvoiceContent() {
                 )}
               </div>
 
-              {/* Quick-add customer form */}
               {showAddCustomer && (
                 <div className="sm:col-span-2 border rounded-lg p-4 bg-blue-50/50 space-y-3">
                   <p className="text-sm font-medium text-blue-800">New Customer</p>
@@ -380,7 +373,11 @@ function NewInvoiceContent() {
                 </div>
               )}
 
-              <div className="space-y-2"><Label>Invoice Date</Label><Input type="date" {...register('invoice_date')} /></div>
+              <div className="space-y-2">
+                <Label>Invoice Date</Label>
+                <Input type="date" {...register('invoice_date')} />
+              </div>
+
               <div className="space-y-2">
                 <Label>Branch *</Label>
                 <select
@@ -402,7 +399,6 @@ function NewInvoiceContent() {
           </CardContent>
         </Card>
 
-        {/* Recurring Service Section */}
         <Card className="max-w-3xl border-blue-200">
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
@@ -438,7 +434,6 @@ function NewInvoiceContent() {
           <CardContent className="space-y-4">
             {fields.map((field, index) => (
               <div key={field.id} className="space-y-3 border rounded-lg p-3 bg-muted/30">
-                {/* Source Type Toggle */}
                 <div className="flex items-center gap-4 mb-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -495,7 +490,7 @@ function NewInvoiceContent() {
                       </div>
                     </>
                   )}
-                  
+
                   <div className="col-span-2 space-y-1">
                     {index === 0 && <Label className="text-xs">Qty</Label>}
                     <Input
@@ -503,7 +498,7 @@ function NewInvoiceContent() {
                       {...register(`items.${index}.quantity`, { valueAsNumber: true })}
                       max={
                         itemSourceTypes[index] === 'stock' && watch(`items.${index}.inventory_product_id`)
-                          ? inventoryProducts.find(p => p.id === watch(`items.${index}.inventory_product_id`))?.stock_quantity
+                          ? inventoryProducts.find((p) => p.id === watch(`items.${index}.inventory_product_id`))?.stock_quantity
                           : undefined
                       }
                     />
@@ -547,7 +542,7 @@ function NewInvoiceContent() {
         </Card>
 
         <div className="flex gap-4 max-w-3xl">
-          <Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create Invoice</Button>
+          <Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Update Invoice</Button>
           <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
         </div>
       </form>

@@ -17,6 +17,7 @@ import { downloadDayBookPDF } from '@/lib/daybook-pdf';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { useUserRole } from '@/lib/use-user-role';
 import { canCreateOrEdit, canDelete } from '@/lib/authz';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -46,6 +47,7 @@ const categories = ['travel', 'salary', 'office', 'utilities', 'maintenance', 'm
 export default function ExpensesPage() {
   const userRole = useUserRole();
   const canManageExpenses = canCreateOrEdit(userRole as any);
+  const { selectedBranchId } = useBranchSelection();
   const [period, setPeriod] = useState<Period>('daily');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -172,6 +174,10 @@ export default function ExpensesPage() {
       if (range.to) invQuery = invQuery.lte('invoice_date', range.to);
       if (range.from) serviceQuery = serviceQuery.gte('scheduled_date', range.from);
       if (range.to) serviceQuery = serviceQuery.lte('scheduled_date', range.to);
+      if (selectedBranchId !== 'all') {
+        invQuery = invQuery.eq('branch_id', selectedBranchId);
+        serviceQuery = serviceQuery.eq('branch_id', selectedBranchId);
+      }
 
       const [{ data: invoices }, { data: services }] = await Promise.all([
         invQuery,

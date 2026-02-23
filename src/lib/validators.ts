@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
 export const customerSchema = z.object({
+  branch_id: z.string().uuid('Select a branch'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().min(10, 'Phone number must be at least 10 digits').max(15),
-  alt_phone: z.string().optional(),
+  phone: z.string().regex(/^\d{10}$/, 'Phone number must be exactly 10 digits'),
+  alt_phone: z.string().optional().refine((value) => {
+    if (!value) return true;
+    return /^\d{10}$/.test(value);
+  }, 'Alt phone must be exactly 10 digits'),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   address_line1: z.string().min(5, 'Address is required'),
   address_line2: z.string().optional(),
@@ -17,6 +21,7 @@ export const customerSchema = z.object({
 
 export const serviceSchema = z.object({
   customer_id: z.string().uuid('Select a customer'),
+  branch_id: z.string().uuid('Select a branch'),
   amc_contract_id: z.string().uuid().optional(),
   service_type: z.enum(['amc_service', 'paid_service', 'installation', 'free_service']),
   scheduled_date: z.string().min(1, 'Scheduled date is required'),
@@ -57,13 +62,13 @@ export const invoiceItemSchema = z.object({
 
 export const invoiceSchema = z.object({
   customer_id: z.string().uuid('Select a customer'),
+  branch_id: z.string().uuid('Select a branch'),
   service_id: z.string().uuid().optional(),
   invoice_date: z.string().optional(),
   tax_percent: z.coerce.number().min(0).optional(),
   discount_amount: z.coerce.number().min(0).optional(),
   notes: z.string().optional(),
   amc_enabled: z.boolean().optional(),
-  free_service_enabled: z.boolean().optional(),
   amc_period_months: z.coerce.number().min(1).optional(),
   items: z.array(invoiceItemSchema).min(1, 'Add at least one item'),
 });

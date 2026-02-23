@@ -46,7 +46,6 @@ export interface Invoice {
   payment_reference: string | null;
   payment_date: string | null;
   amc_enabled: boolean;
-  free_service_enabled: boolean;
   amc_period_months: number | null;
   notes: string | null;
   created_by: string | null;
@@ -58,6 +57,7 @@ export interface Invoice {
 
 export interface InvoiceFormData {
   customer_id: string;
+  branch_id: string;
   service_id?: string;
   quotation_id?: string;
   invoice_date?: string;
@@ -66,7 +66,6 @@ export interface InvoiceFormData {
   discount_amount?: number;
   notes?: string;
   amc_enabled?: boolean;
-  free_service_enabled?: boolean;
   amc_period_months?: number;
   items: InvoiceItemFormData[];
 }

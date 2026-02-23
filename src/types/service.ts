@@ -93,6 +93,7 @@ export interface ServiceWithDetails extends Service {
 
 export interface ServiceFormData {
   customer_id: string;
+  branch_id: string;
   customer_product_id?: string;
   amc_contract_id?: string;
   service_type: ServiceType;

@@ -5,27 +5,57 @@ import { createClient } from '@/lib/supabase/client';
 import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
 import type { Invoice, InvoiceFormData, InvoiceWithDetails } from '@/types';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
-export function useInvoices(filters?: { status?: string; customerId?: string }) {
+export function useInvoices(filters?: {
+  status?: string;
+  customerId?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  pageSize?: number;
+}) {
   const [invoices, setInvoices] = useState<InvoiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
 
   const supabase = createClient();
   const repo = useMemo(() => new InvoiceRepository(supabase), [supabase]);
+  const { selectedBranchId } = useBranchSelection();
 
   const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await repo.findAll(filters);
+      const pageSize = filters?.pageSize ?? 20;
+      const page = filters?.page ?? 1;
+      const offset = (page - 1) * pageSize;
+      const { data, count } = await repo.findAll({
+        ...filters,
+        branchId: selectedBranchId,
+        limit: pageSize,
+        offset,
+      });
       setInvoices(data);
+      setTotalCount(count);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch invoices');
     } finally {
       setLoading(false);
     }
-  }, [repo, filters?.status, filters?.customerId]);
+  }, [
+    repo,
+    selectedBranchId,
+    filters?.status,
+    filters?.customerId,
+    filters?.search,
+    filters?.dateFrom,
+    filters?.dateTo,
+    filters?.page,
+    filters?.pageSize,
+  ]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -56,9 +86,10 @@ export function useInvoices(filters?: { status?: string; customerId?: string }) 
     }));
 
     await repo.createItems(itemsToInsert);
-    await fetchInvoices();
+    // Add to local state immediately with items included
+    setInvoices((prev) => [{ ...invoice, items: itemsToInsert } as any, ...prev]);
     return invoice;
-  }, [repo, fetchInvoices]);
+  }, [repo]);
 
   const recordPayment = useCallback(async (id: string, amount: number, method: string, reference?: string) => {
     const invoice = await repo.findById(id);
@@ -73,9 +104,10 @@ export function useInvoices(filters?: { status?: string; customerId?: string }) 
       payment_method: method,
       payment_reference: reference || null,
     });
-    await fetchInvoices();
+    // Update local state immediately
+    setInvoices((prev) => prev.map((inv) => (inv.id === id ? { ...inv, ...data } : inv)));
     return data;
-  }, [repo, fetchInvoices]);
+  }, [repo]);
 
-  return { invoices, loading, error, fetchInvoices, getInvoice, createInvoice, recordPayment };
+  return { invoices, loading, error, totalCount, fetchInvoices, getInvoice, createInvoice, recordPayment };
 }

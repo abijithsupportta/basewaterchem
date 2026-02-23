@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,9 +13,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { SimpleSelect } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { serviceSchema } from '@/lib/validators';
 import { useCustomers } from '@/hooks/use-customers';
+import { useBranches } from '@/hooks/use-branches';
 import { TIME_SLOTS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { notifyCustomer } from '@/lib/notify-client';
@@ -34,6 +34,7 @@ function NewServicePageContent() {
   const searchParams = useSearchParams();
   const preselectedCustomer = searchParams.get('customer');
   const { customers, createCustomer } = useCustomers();
+  const { branches, getDefaultBranch, loading: branchesLoading } = useBranches();
 
   // Quick-add customer state
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -48,9 +49,20 @@ function NewServicePageContent() {
     defaultValues: {
       service_type: 'paid_service',
       customer_id: preselectedCustomer || '',
+      branch_id: '',
       scheduled_date: new Date().toISOString().split('T')[0],
     },
   });
+
+  // Set default branch when branches load
+  useEffect(() => {
+    if (!branchesLoading && branches.length > 0) {
+      const defaultBranch = getDefaultBranch();
+      if (defaultBranch) {
+        setValue('branch_id', defaultBranch.id);
+      }
+    }
+  }, [branchesLoading, branches, getDefaultBranch, setValue]);
 
   const onSubmit = async (data: ServiceFormData) => {
     try {
@@ -141,7 +153,6 @@ function NewServicePageContent() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <h1 className="text-2xl font-bold">New Service</h1>
       <Card className="max-w-2xl">
         <CardHeader><CardTitle>Service Details</CardTitle></CardHeader>
@@ -209,6 +220,20 @@ function NewServicePageContent() {
                   </Button>
                 </div>
               )}
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Branch *</Label>
+                <select
+                  {...register('branch_id')}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">Select branch...</option>
+                  {branches && branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.branch_name}</option>
+                  ))}
+                </select>
+                {errors.branch_id && <p className="text-sm text-destructive">{errors.branch_id.message as string}</p>}
+              </div>
 
               <div className="space-y-2">
                 <Label>Service Type *</Label>

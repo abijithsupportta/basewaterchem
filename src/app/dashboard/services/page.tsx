@@ -1,17 +1,16 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Wrench } from 'lucide-react';
+import { Plus, Wrench, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useServices } from '@/hooks/use-services';
-import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil, cn } from '@/lib/utils';
+import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceDaysLeft, getFreeServiceValidUntil, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 
 const STATUS_CHIPS = [
@@ -57,6 +56,8 @@ function getDateRange(period: string): { from?: string; to?: string } {
 
 export default function ServicesPage() {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [statusFilter, setStatusFilter] = useState('all');
   const [timeFilter, setTimeFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -72,29 +73,36 @@ export default function ServicesPage() {
 
   const filters = useMemo(() => ({
     status: statusFilter !== 'all' ? statusFilter : undefined,
-    type: typeFilter !== 'all' ? typeFilter : undefined,
+    // Free Service is a label based on validity window, not service_type
+    type: typeFilter !== 'all' && typeFilter !== 'free_service' ? typeFilter : undefined,
+    freeOnly: typeFilter === 'free_service',
     dateFrom: dateRange.from,
     dateTo: dateRange.to,
-  }), [statusFilter, typeFilter, dateRange]);
+    search: search || undefined,
+    page,
+    pageSize,
+  }), [statusFilter, typeFilter, dateRange, search, page, pageSize]);
 
-  const { services, loading } = useServices(filters);
+  const { services, loading, totalCount } = useServices(filters);
 
-  const filtered = services.filter((s: any) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return s.service_number?.toLowerCase().includes(q) ||
-      (s.customer as any)?.full_name?.toLowerCase().includes(q) ||
-      (s.customer as any)?.customer_code?.toLowerCase().includes(q) ||
-      (s.customer as any)?.phone?.includes(q);
-  });
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, typeFilter, timeFilter, customFrom, customTo, pageSize]);
+
+  const filtered = typeFilter === 'free_service'
+    ? services.filter((s: any) => isFreeServiceActive(s))
+    : services;
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endIndex = Math.min(page * pageSize, totalCount);
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Services</h1>
-          <p className="text-muted-foreground">{filtered.length} service{filtered.length !== 1 ? 's' : ''}</p>
+          <p className="text-muted-foreground">{totalCount} service{totalCount !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/services/upcoming"><Button variant="outline">Upcoming</Button></Link>
@@ -176,7 +184,7 @@ export default function ServicesPage() {
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <p className="font-medium">{service.service_number}</p>
                       <Badge variant="outline">
                         {service.service_type === 'free_service' && !isFreeServiceActive(service)
@@ -188,10 +196,13 @@ export default function ServicesPage() {
                           <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
                           {getFreeServiceValidUntil(service) && (
                             <span className="text-xs text-muted-foreground">
-                              Free until: {formatDate(getFreeServiceValidUntil(service)!)}
+                              {Math.max(0, getFreeServiceDaysLeft(service) ?? 0)} days left
                             </span>
                           )}
                         </>
+                      )}
+                      {(service.branch as any) && (
+                        <Badge variant="outline" className="gap-1 text-xs"><Building2 className="h-3 w-3" /> {(service.branch as any)?.branch_name}</Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -208,6 +219,30 @@ export default function ServicesPage() {
           ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Showing {startIndex}-{endIndex} of {totalCount}
+        </p>
+        <div className="flex items-center gap-2">
+          <select
+            className="rounded-md border px-2 py-1 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <span className="text-sm">Page {page} of {totalPages}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

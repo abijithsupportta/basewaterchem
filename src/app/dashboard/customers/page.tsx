@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Upload, Download, Loader2 } from 'lucide-react';
+import { Plus, Search, Upload, Download, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,15 +12,23 @@ import { useCustomers } from '@/hooks/use-customers';
 import { useDebounce } from '@/hooks/use-debounce';
 import { formatDate, formatPhone } from '@/lib/utils';
 import { LoadingSpinner, EmptyState } from '@/components/ui/loading';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { useUserRole } from '@/lib/use-user-role';
+import { isSuperadmin } from '@/lib/authz';
 
 export default function CustomersPage() {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const debouncedSearch = useDebounce(search, 300);
-  const { customers, loading, error, fetchCustomers } = useCustomers(debouncedSearch);
+  const { customers, loading, error, totalCount, fetchCustomers, deleteCustomer } = useCustomers({
+    search: debouncedSearch,
+    page,
+    pageSize,
+  });
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const userRole = useUserRole();
 
   const handleExport = () => {
     const headers = ['customer_code', 'full_name', 'phone', 'email', 'address_line1', 'address_line2', 'city', 'state', 'pincode', 'gst_number'];
@@ -81,9 +89,27 @@ export default function CustomersPage() {
     }
   };
 
+  const handleDelete = async (id: string, name: string) => {
+    if (!isSuperadmin(userRole)) return;
+    const confirmed = window.confirm(
+      `Delete ${name}? This will also remove all related services and invoices.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteCustomer(id);
+      toast.success('Customer deleted');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete customer');
+    }
+  };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, pageSize]);
+
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Customers</h1>
@@ -144,6 +170,7 @@ export default function CustomersPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>City</TableHead>
+                  <TableHead>Branch</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -155,11 +182,25 @@ export default function CustomersPage() {
                     <TableCell className="font-medium">{customer.full_name}</TableCell>
                     <TableCell>{formatPhone(customer.phone)}</TableCell>
                     <TableCell>{customer.city}</TableCell>
+                    <TableCell>
+                      {customer.branch
+                        ? `${customer.branch.branch_name} (${customer.branch.branch_code})`
+                        : '-'}
+                    </TableCell>
                     <TableCell>{formatDate(customer.created_at)}</TableCell>
                     <TableCell className="text-right">
                       <Link href={`/dashboard/customers/${customer.id}`}>
                         <Button variant="ghost" size="sm">View</Button>
                       </Link>
+                    {isSuperadmin(userRole) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(customer.id, customer.full_name)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -168,6 +209,30 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Showing {totalCount === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalCount)} of {totalCount}
+        </p>
+        <div className="flex items-center gap-2">
+          <select
+            className="rounded-md border px-2 py-1 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+            Previous
+          </Button>
+          <span className="text-sm">Page {page} of {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(Math.max(1, Math.ceil(totalCount / pageSize)), p + 1))} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>
+            Next
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

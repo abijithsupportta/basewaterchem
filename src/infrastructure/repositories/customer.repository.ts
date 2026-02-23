@@ -3,9 +3,13 @@ import { DatabaseError, NotFoundError } from '@/core/errors';
 import type { Customer, CustomerFormData } from '@/types';
 
 // Reusable select shapes
-const CUSTOMER_LIST_SELECT = '*';
+const CUSTOMER_LIST_SELECT = `
+  *,
+  branch:branches (id, branch_name, branch_code)
+`;
 const CUSTOMER_DETAIL_SELECT = `
   *,
+  branch:branches (id, branch_name, branch_code),
   customer_products (
     *,
     product:products (*)
@@ -18,6 +22,7 @@ export class CustomerRepository {
   async findAll(options?: {
     search?: string;
     isActive?: boolean;
+    branchId?: string;
     page?: number;
     limit?: number;
     offset?: number;
@@ -29,6 +34,10 @@ export class CustomerRepository {
 
     if (options?.isActive !== undefined) {
       query = query.eq('is_active', options.isActive);
+    }
+
+    if (options?.branchId && options.branchId !== 'all') {
+      query = query.eq('branch_id', options.branchId);
     }
 
     if (options?.search) {
@@ -61,7 +70,7 @@ export class CustomerRepository {
     const { data, error } = await this.db
       .from('customers')
       .insert(formData)
-      .select()
+      .select(CUSTOMER_LIST_SELECT)
       .single();
 
     if (error) throw new DatabaseError(error.message);
@@ -73,7 +82,7 @@ export class CustomerRepository {
       .from('customers')
       .update(formData)
       .eq('id', id)
-      .select()
+      .select(CUSTOMER_LIST_SELECT)
       .single();
 
     if (error) throw new DatabaseError(error.message);
@@ -85,6 +94,15 @@ export class CustomerRepository {
     const { error } = await this.db
       .from('customers')
       .update({ is_active: false })
+      .eq('id', id);
+
+    if (error) throw new DatabaseError(error.message);
+  }
+
+  async delete(id: string): Promise<void> {
+    const { error } = await this.db
+      .from('customers')
+      .delete()
       .eq('id', id);
 
     if (error) throw new DatabaseError(error.message);

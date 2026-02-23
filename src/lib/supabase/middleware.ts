@@ -51,6 +51,13 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!user && !isAuthPage && request.nextUrl.pathname !== '/') {
+    // For API routes, return JSON error instead of HTML redirect
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized: Please log in.' } },
+        { status: 401 }
+      );
+    }
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

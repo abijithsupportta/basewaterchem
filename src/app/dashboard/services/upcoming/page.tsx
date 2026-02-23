@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
-import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceValidUntil } from '@/lib/utils';
+import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceDaysLeft, getFreeServiceValidUntil } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -60,7 +60,7 @@ export default function UpcomingServicesPage() {
                                 <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>
                                 {getFreeServiceValidUntil(s) && (
                                   <span className="text-xs text-muted-foreground">
-                                    Free until: {formatDate(getFreeServiceValidUntil(s)!)}
+                                    {Math.max(0, getFreeServiceDaysLeft(s) ?? 0)} days left
                                   </span>
                                 )}
                               </>

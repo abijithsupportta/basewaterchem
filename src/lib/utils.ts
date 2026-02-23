@@ -16,6 +16,7 @@ export {
   getServiceTypeLabel,
   isFreeServiceActive,
   getFreeServiceValidUntil,
+  getFreeServiceDaysLeft,
   getStatusColor,
   getEffectiveServiceStatus,
   truncate,

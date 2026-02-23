@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, IndianRupee, Download } from 'lucide-react';
+import { ArrowLeft, Loader2, IndianRupee, Download, Pencil, Building2, Trash2 } from 'lucide-react';
 import { downloadInvoicePDF } from '@/lib/invoice-pdf';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,12 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SimpleSelect } from '@/components/ui/select';
-import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Loading } from '@/components/ui/loading';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { useUserRole } from '@/lib/use-user-role';
+import { isSuperadmin } from '@/lib/authz';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,19 +29,25 @@ export default function InvoiceDetailPage() {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [paymentReference, setPaymentReference] = useState('');
   const [recording, setRecording] = useState(false);
   const [companySettings, setCompanySettings] = useState<any>(null);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [deleting, setDeleting] = useState(false);
+  const userRole = useUserRole();
 
   useEffect(() => {
     if (!id) return;
     const supabase = createBrowserClient();
     Promise.all([
-      supabase.from('invoices').select('*, customer:customers(*)').eq('id', id).single(),
+      supabase.from('invoices').select('*, customer:customers(*), branch:branches(id,branch_name,branch_code)').eq('id', id).single(),
       supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
+      supabase.from('invoice_payments').select('*').eq('invoice_id', id).order('paid_at', { ascending: false }),
       fetch('/api/settings').then(r => r.json()),
-    ]).then(([invRes, iRes, settings]) => {
+    ]).then(([invRes, iRes, payRes, settings]) => {
       if (invRes.data) { setInvoice(invRes.data); setPaymentAmount(invRes.data.balance_due); }
       if (iRes.data) setItems(iRes.data);
+      if (payRes.data) setPaymentHistory(payRes.data);
       if (settings) setCompanySettings(settings);
       setLoading(false);
     });
@@ -59,6 +66,17 @@ export default function InvoiceDetailPage() {
     setRecording(true);
     try {
       const supabase = createBrowserClient();
+      let createdByStaffId: string | null = null;
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData.user) {
+        const { data: staff } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('auth_user_id', authData.user.id)
+          .maybeSingle();
+        createdByStaffId = staff?.id ?? null;
+      }
+
       const newPaid = (invoice.amount_paid || 0) + paymentAmount;
       const newBalance = invoice.total_amount - newPaid;
       const newStatus = newBalance <= 0 ? 'paid' : 'partial';
@@ -70,9 +88,25 @@ export default function InvoiceDetailPage() {
         payment_date: new Date().toISOString(),
       }).eq('id', id);
       if (error) throw error;
+
+      const { data: paymentRow, error: paymentError } = await supabase
+        .from('invoice_payments')
+        .insert({
+          invoice_id: id,
+          amount: paymentAmount,
+          payment_method: paymentMethod,
+          payment_reference: paymentReference || null,
+          created_by: createdByStaffId,
+        })
+        .select()
+        .single();
+      if (paymentError) throw paymentError;
+
       toast.success('Payment recorded!');
       setInvoice((inv: any) => ({ ...inv, amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus }));
+      if (paymentRow) setPaymentHistory((prev) => [paymentRow, ...prev]);
       setPaymentAmount(Math.max(0, newBalance));
+      setPaymentReference('');
       setShowPayment(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to record payment');
@@ -89,6 +123,27 @@ export default function InvoiceDetailPage() {
       items,
       companySettings
     );
+  };
+
+  const handleDeleteInvoice = async () => {
+    if (!isSuperadmin(userRole as any)) {
+      toast.error('Only superadmin can delete invoices');
+      return;
+    }
+    const confirmed = window.confirm('Delete this invoice? This action cannot be undone.');
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      const supabase = createBrowserClient();
+      const { error } = await supabase.from('invoices').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Invoice deleted');
+      router.push('/dashboard/invoices');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete invoice');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (loading) return <Loading />;
@@ -112,7 +167,6 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/invoices')}><ArrowLeft className="h-4 w-4" /></Button>
@@ -123,6 +177,13 @@ export default function InvoiceDetailPage() {
           <Badge className={getStatusColor(invoice.status)}>{INVOICE_STATUS_LABELS[invoice.status as keyof typeof INVOICE_STATUS_LABELS] || invoice.status}</Badge>
         </div>
         <div className="flex gap-2">
+          <Link href={`/dashboard/invoices/${id}/edit`}><Button variant="outline"><Pencil className="mr-2 h-4 w-4" /> Edit</Button></Link>
+          {isSuperadmin(userRole as any) && (
+            <Button variant="destructive" onClick={handleDeleteInvoice} disabled={deleting}>
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
+            </Button>
+          )}
           {invoice.status !== 'paid' && (
             <Button onClick={() => { setPaymentAmount(invoice.balance_due ?? (invoice.total_amount - (invoice.amount_paid || 0))); setShowPayment(true); }}><IndianRupee className="mr-2 h-4 w-4" /> Record Payment</Button>
           )}
@@ -130,7 +191,7 @@ export default function InvoiceDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader><CardTitle className="text-base">Invoice Overview</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -157,6 +218,19 @@ export default function InvoiceDetailPage() {
             <div className="flex justify-between"><span className="text-muted-foreground">Total:</span><span className="font-bold">{formatCurrency(invoice.total_amount)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Paid:</span><span className="font-medium text-green-600">{formatCurrency(invoice.amount_paid)}</span></div>
             <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Balance Due:</span><span className="font-bold text-red-600">{formatCurrency(invoice.balance_due)}</span></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" /> Branch</CardTitle></CardHeader>
+          <CardContent>
+            {invoice.branch ? (
+              <div className="space-y-1">
+                <p className="font-medium">{invoice.branch.branch_name}</p>
+                <p className="text-sm text-muted-foreground">{invoice.branch.branch_code}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No branch assigned</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -204,6 +278,38 @@ export default function InvoiceDetailPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader><CardTitle className="text-base">Payment History</CardTitle></CardHeader>
+        <CardContent>
+          {paymentHistory.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No payments recorded yet</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left">
+                    <th className="pb-2 pt-2 px-2 font-medium">Date</th>
+                    <th className="pb-2 pt-2 px-2 font-medium">Method</th>
+                    <th className="pb-2 pt-2 px-2 font-medium">Reference</th>
+                    <th className="pb-2 pt-2 px-2 font-medium text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentHistory.map((p) => (
+                    <tr key={p.id} className="border-b last:border-0">
+                      <td className="py-2 px-2 text-muted-foreground">{formatDate(p.paid_at)}</td>
+                      <td className="py-2 px-2">{(p.payment_method || '').toUpperCase()}</td>
+                      <td className="py-2 px-2 text-muted-foreground">{p.payment_reference || '-'}</td>
+                      <td className="py-2 px-2 text-right font-medium">{formatCurrency(p.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Dialog open={showPayment} onOpenChange={setShowPayment}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -234,6 +340,10 @@ export default function InvoiceDetailPage() {
                   {paymentAmount > balanceDue && <p className="text-xs text-red-500">Cannot exceed due amount of {formatCurrency(balanceDue)}</p>}
                 </div>
                 <div className="space-y-2"><Label>Payment Method</Label><SimpleSelect options={paymentMethodOptions} value={paymentMethod} onChange={setPaymentMethod} /></div>
+                <div className="space-y-2">
+                  <Label>Reference (Optional)</Label>
+                  <Input value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Txn ID / UTR / Cheque" />
+                </div>
                 <div className="flex gap-3 pt-2">
                   <Button className="flex-1" onClick={handleRecordPayment} disabled={recording || paymentAmount <= 0 || paymentAmount > balanceDue}>{recording && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record {formatCurrency(paymentAmount)}</Button>
                   <Button variant="outline" onClick={() => setShowPayment(false)}>Cancel</Button>

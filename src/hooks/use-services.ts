@@ -5,33 +5,61 @@ import { createClient } from '@/lib/supabase/client';
 import { ServiceRepository } from '@/infrastructure/repositories';
 import { ServiceCalculator } from '@/core/services';
 import type { Service, ServiceFormData, ServiceCompleteData, ServiceWithDetails } from '@/types';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 export function useServices(filters?: {
   status?: string;
   type?: string;
+  branchId?: string;
   customerId?: string;
   dateFrom?: string;
   dateTo?: string;
+  search?: string;
+  freeOnly?: boolean;
+  page?: number;
+  pageSize?: number;
 }) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
 
   const supabase = createClient();
   const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
+  const { selectedBranchId } = useBranchSelection();
 
   const fetchServices = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await repo.findAll(filters);
+      const pageSize = filters?.pageSize ?? 20;
+      const page = filters?.page ?? 1;
+      const { data, count } = await repo.findAll({
+        ...filters,
+        branchId: selectedBranchId,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
       setServices(data);
+      setTotalCount(count);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch services');
     } finally {
       setLoading(false);
     }
-  }, [repo, filters?.status, filters?.type, filters?.customerId, filters?.dateFrom, filters?.dateTo]);
+  }, [
+    repo,
+    selectedBranchId,
+    filters?.status,
+    filters?.type,
+    filters?.customerId,
+    filters?.dateFrom,
+    filters?.dateTo,
+    filters?.search,
+    filters?.freeOnly,
+    filters?.page,
+    filters?.pageSize,
+  ]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
@@ -56,7 +84,7 @@ export function useServices(filters?: {
     return data;
   }, [repo, fetchServices]);
 
-  return { services, loading, error, fetchServices, getService, createService, updateService, completeService };
+  return { services, loading, error, totalCount, fetchServices, getService, createService, updateService, completeService };
 }
 
 export function useUpcomingServices() {

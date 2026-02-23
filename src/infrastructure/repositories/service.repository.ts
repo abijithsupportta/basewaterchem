@@ -5,12 +5,14 @@ import type { Service, ServiceWithDetails, ServiceFormData, ServiceCompleteData 
 const SERVICE_LIST_SELECT = `
   *,
   customer:customers (id, full_name, phone, customer_code, address_line1, city),
+  branch:branches (id, branch_name, branch_code),
   amc_contract:amc_contracts (id, contract_number, status)
 `;
 
 const SERVICE_DETAIL_SELECT = `
   *,
   customer:customers (*),
+  branch:branches (id, branch_name, branch_code),
   amc_contract:amc_contracts (*)
 `;
 
@@ -20,9 +22,12 @@ export class ServiceRepository {
   async findAll(filters?: {
     status?: string;
     type?: string;
+    branchId?: string;
     customerId?: string;
     dateFrom?: string;
     dateTo?: string;
+    search?: string;
+    freeOnly?: boolean;
     page?: number;
     limit?: number;
     offset?: number;
@@ -39,9 +44,22 @@ export class ServiceRepository {
       query = query.eq('status', filters.status);
     }
     if (filters?.type) query = query.eq('service_type', filters.type);
+    if (filters?.branchId && filters.branchId !== 'all') query = query.eq('branch_id', filters.branchId);
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
     if (filters?.dateFrom) query = query.gte('scheduled_date', filters.dateFrom);
     if (filters?.dateTo) query = query.lte('scheduled_date', filters.dateTo);
+    if (filters?.freeOnly) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      query = query
+        .not('free_service_valid_until', 'is', null)
+        .gte('free_service_valid_until', todayStr);
+    }
+    if (filters?.search) {
+      const q = filters.search.replace(/%/g, '\\%');
+      query = query.or(
+        `service_number.ilike.%${q}%,customer.full_name.ilike.%${q}%,customer.customer_code.ilike.%${q}%,customer.phone.ilike.%${q}%`
+      );
+    }
     if (filters?.offset !== undefined && filters?.limit !== undefined) {
       query = query.range(filters.offset, filters.offset + filters.limit - 1);
     }
@@ -119,6 +137,10 @@ export class ServiceRepository {
   }
 
   async delete(id: string): Promise<void> {
+    // Note: Deletion of scheduled AMC services triggers automatic rescheduling via DB trigger
+    // (see migration 030_amc_auto_reschedule_on_delete.sql)
+    // If the deleted service was a scheduled AMC service, a new service will be auto-created
+    // with the next interval date.
     const { error } = await this.db
       .from('services')
       .delete()

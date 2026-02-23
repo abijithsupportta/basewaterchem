@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { Loading } from '@/components/ui/loading';
 import { canAccessStaffModule, canDelete } from '@/lib/authz';
+import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 type RoleOption = (typeof STAFF_ROLES)[number]['value'];
 
@@ -37,6 +38,7 @@ type Branch = {
 
 export default function StaffPage() {
   const userRole = useUserRole();
+  const { selectedBranchId } = useBranchSelection();
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +91,11 @@ export default function StaffPage() {
   if (!canAccessStaffModule(userRole)) {
     return <div className="p-8 text-center text-red-600">Access denied.</div>;
   }
+
+  const filteredStaffList =
+    selectedBranchId === 'all'
+      ? staffList
+      : staffList.filter((staff) => staff.branch_id === selectedBranchId);
 
   const handleAddStaff = async () => {
     if (!name.trim() || !email.trim()) {
@@ -200,7 +207,7 @@ export default function StaffPage() {
           </tr>
         </thead>
         <tbody>
-          {staffList.map((staff) => (
+          {filteredStaffList.map((staff) => (
             <tr key={staff.id}>
               <td className="border p-2">{staff.full_name}</td>
               <td className="border p-2">{staff.role}</td>
