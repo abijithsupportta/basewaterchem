@@ -1,14 +1,14 @@
 // Role-based access utility
 export type StaffRole = 'superadmin' | 'admin' | 'manager' | 'staff' | 'technician';
 
-// Superadmin can do everything including delete
+// Only superadmin can delete
 export function canDelete(role: StaffRole) {
-  return role === 'superadmin' || role === 'admin';
+  return role === 'superadmin';
 }
 
-// Superadmin and managers can manage staff and branches
+// Only superadmin can manage staff
 export function canManageStaff(role: StaffRole) {
-  return role === 'superadmin' || role === 'admin' || role === 'manager';
+  return role === 'superadmin';
 }
 
 // Superadmin, manager, staff, and technician can create/edit
@@ -21,9 +21,9 @@ export function canAccessDashboard(role: StaffRole) {
   return role !== 'staff';
 }
 
-// Only superadmin, admin, and manager can view staff module
+// Only superadmin can view staff module
 export function canAccessStaffModule(role: StaffRole) {
-  return role === 'superadmin' || role === 'admin' || role === 'manager';
+  return role === 'superadmin';
 }
 
 // Superadmin and manager can manage branches

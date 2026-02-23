@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useUserRole } from '@/lib/use-user-role';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,14 +46,43 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showResendModal, setShowResendModal] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendTarget, setResendTarget] = useState<StaffItem | null>(null);
 
   // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [resendPassword, setResendPassword] = useState('');
+  const [showResendPassword, setShowResendPassword] = useState(false);
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<RoleOption>('staff');
   const [branchId, setBranchId] = useState<string>('');
+
+  const refreshStaffList = async (showSpinner: boolean) => {
+    if (showSpinner) {
+      setLoading(true);
+    }
+    try {
+      const staffResponse = await fetch('/api/staff');
+      const staffPayload = await staffResponse.json();
+
+      if (!staffResponse.ok) {
+        throw new Error(staffPayload?.error?.message || 'Failed to load staff');
+      }
+
+      setStaffList(staffPayload.data ?? []);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to load data');
+    } finally {
+      if (showSpinner) {
+        setLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -95,16 +125,41 @@ export default function StaffPage() {
   const resetForm = () => {
     setName('');
     setEmail('');
+    setPassword('');
     setPhone('');
     setRole('staff');
     setBranchId('');
     setShowAddModal(false);
   };
 
+  const openResendModal = (staff: StaffItem) => {
+    setResendTarget(staff);
+    setResendPassword('');
+    setShowResendPassword(false);
+    setShowResendModal(true);
+  };
+
+  const closeResendModal = () => {
+    setShowResendModal(false);
+    setResendTarget(null);
+    setResendPassword('');
+    setShowResendPassword(false);
+  };
+
+
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) {
-      toast.error('Name and email are required');
+    const normalizedPassword = password.trim();
+    if (!name.trim() || !email.trim() || !normalizedPassword) {
+      toast.error('Name, email, and password are required');
+      return;
+    }
+    if (normalizedPassword.length !== 6) {
+      toast.error('Password must be exactly 6 characters');
+      return;
+    }
+    if ((role === 'staff' || role === 'technician') && !branchId) {
+      toast.error('Branch is required for staff and technician roles');
       return;
     }
 
@@ -116,6 +171,7 @@ export default function StaffPage() {
         body: JSON.stringify({
           full_name: name.trim(),
           email: email.trim(),
+          password: normalizedPassword,
           phone: phone.trim() || null,
           role,
           branch_id: branchId || null,
@@ -128,9 +184,9 @@ export default function StaffPage() {
         throw new Error(payload?.error?.message || 'Failed to create staff');
       }
 
-      setStaffList((prev) => [payload.data, ...prev]);
       toast.success('Staff created successfully');
       resetForm();
+      await refreshStaffList(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to create staff');
     } finally {
@@ -188,6 +244,45 @@ export default function StaffPage() {
       setUpdatingId(null);
     }
   };
+
+  const handleResendCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resendTarget) {
+      toast.error('Select a staff member to resend credentials.');
+      return;
+    }
+    const normalizedPassword = resendPassword.trim();
+    if (!normalizedPassword) {
+      toast.error('Password is required.');
+      return;
+    }
+    if (normalizedPassword.length !== 6) {
+      toast.error('Password must be exactly 6 characters');
+      return;
+    }
+
+    setResending(true);
+    try {
+      const response = await fetch('/api/staff/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: resendTarget.id, password: normalizedPassword }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || 'Failed to resend credentials');
+      }
+
+      toast.success(`Credentials sent to ${resendTarget.email}`);
+      closeResendModal();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to resend credentials');
+    } finally {
+      setResending(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6 p-4">
@@ -266,14 +361,27 @@ export default function StaffPage() {
                       >
                         {staff.is_active ? 'Deactivate' : 'Activate'}
                       </Button>
+                      {userRole === 'superadmin' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingId === staff.id}
+                          onClick={() => openResendModal(staff)}
+                        >
+                          Resend Credentials
+                        </Button>
+                      )}
                       {canDelete(userRole) && (
                         <Button
                           size="sm"
-                          variant="destructive"
+                          variant="outline"
+                          className="border-red-500 text-red-600 hover:bg-transparent hover:text-red-700"
                           disabled={updatingId === staff.id}
                           onClick={() => handleDeleteStaff(staff)}
+                          aria-label="Delete staff"
+                          title="Delete staff"
                         >
-                          Delete
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -321,6 +429,32 @@ export default function StaffPage() {
                 />
               </div>
 
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Password *</label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Create a password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    maxLength={6}
+                    className="mt-1 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Password must be exactly 6 characters.</p>
+              </div>
+
               {/* Role */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">Role *</label>
@@ -339,7 +473,9 @@ export default function StaffPage() {
 
               {/* Branch */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">Assign to Branch (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Assign to Branch {role === 'staff' || role === 'technician' ? '*' : '(Optional)'}
+                </label>
                 <select
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   value={branchId}
@@ -358,6 +494,9 @@ export default function StaffPage() {
                 </select>
                 {branches.length === 0 && (
                   <p className="mt-1 text-xs text-orange-600">⚠️ No branches available. Create a branch first.</p>
+                )}
+                {(role === 'staff' || role === 'technician') && !branchId && branches.length > 0 && (
+                  <p className="mt-1 text-xs text-red-600">Branch is required for staff and technician roles.</p>
                 )}
               </div>
 
@@ -396,11 +535,76 @@ export default function StaffPage() {
         </div>
       )}
 
+      {showResendModal && resendTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold">Resend Credentials</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Send login credentials to {resendTarget.email}
+              </p>
+            </div>
+
+            <form onSubmit={handleResendCredentials} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">New Password *</label>
+                <div className="relative">
+                  <Input
+                    type={showResendPassword ? 'text' : 'password'}
+                    placeholder="Enter a new 6-character password"
+                    value={resendPassword}
+                    onChange={(e) => setResendPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    maxLength={6}
+                    className="mt-1 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResendPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showResendPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showResendPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Password must be exactly 6 characters.</p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeResendModal}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={resending}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                >
+                  {resending ? 'Sending...' : 'Send Credentials'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
       {/* Modal Backdrop Click Handler */}
       {showAddModal && (
         <div
           className="fixed inset-0 z-40"
           onClick={resetForm}
+        />
+      )}
+      {showResendModal && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={closeResendModal}
         />
       )}
     </div>

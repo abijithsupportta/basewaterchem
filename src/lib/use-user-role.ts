@@ -13,6 +13,12 @@ export function useUserRole(): StaffRole {
       const { data, error } = await supabase.auth.getUser();
       if (error || !data.user || cancelled) return;
 
+      const metadataRole = data.user.user_metadata?.role as StaffRole | undefined;
+      if (!cancelled && metadataRole) {
+        setRole(metadataRole);
+        return;
+      }
+
       const { data: staff } = await supabase
         .from('staff')
         .select('role')
@@ -21,12 +27,6 @@ export function useUserRole(): StaffRole {
 
       if (!cancelled && staff?.role) {
         setRole(staff.role as StaffRole);
-        return;
-      }
-
-      const metadataRole = data.user.user_metadata?.role as StaffRole | undefined;
-      if (!cancelled && metadataRole) {
-        setRole(metadataRole);
       }
     };
 

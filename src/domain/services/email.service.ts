@@ -210,6 +210,49 @@ class EmailService {
       return { success: false, error: String(error) };
     }
   }
+
+  /**
+   * Send staff login credentials email
+   */
+  async sendStaffCredentialsEmail(params: {
+    staffEmail: string;
+    staffName: string;
+    role: string;
+    password: string;
+  }): Promise<EmailResult> {
+    if (!params.staffEmail) {
+      return { success: false, error: 'Staff email is required' };
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const loginUrl = `${appUrl.replace(/\/$/, '')}/login`;
+
+    const html = this.getBaseTemplate(`
+      <p>Dear <strong>${params.staffName}</strong>,</p>
+      <p>Your account has been created. You can log in using the details below:</p>
+      <div class="highlight">
+        <p><strong>Email:</strong> ${params.staffEmail}</p>
+        <p><strong>Password:</strong> ${params.password}</p>
+        <p><strong>Role:</strong> ${params.role}</p>
+      </div>
+      <p>Please log in and keep your credentials secure. If you need help, contact the administrator.</p>
+      <a class="btn" href="${loginUrl}">Log In</a>
+    `);
+
+    try {
+      const result = await this.transporter.sendMail({
+        from: this.FROM_EMAIL,
+        to: params.staffEmail,
+        subject: `Your Login Credentials | ${this.COMPANY_NAME}`,
+        html,
+      });
+      console.log(`[Email] Staff credentials sent to ${params.staffEmail}`);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error(`[Email] Failed to send staff credentials:`, error);
+      return { success: false, error: String(error) };
+    }
+  }
 }
 
 // Export singleton instance

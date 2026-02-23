@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, Wrench, FileCheck,
   Receipt, Droplets, LogOut, ChevronLeft, CalendarDays, Settings, Wallet, Package, Building2,
@@ -19,6 +19,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, signOut } = useAuth();
   const userRole = useUserRole();
   const [collapsed, setCollapsed] = useState(false);
@@ -27,6 +28,7 @@ export function Sidebar() {
   const handleLogoutConfirm = async () => {
     setShowLogoutModal(false);
     await signOut();
+    router.replace('/login');
   };
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
