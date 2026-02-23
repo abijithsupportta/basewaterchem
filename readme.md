@@ -2,6 +2,119 @@
 
 Professional project documentation for Base Water Chemicals.
 
+> Document format: **Part A (Client-Facing)** + **Part B (Internal Engineering)**
+
+---
+
+## Part A) Client-Facing Documentation
+
+This section is for business stakeholders, operations leaders, and client-side decision makers.
+
+### A.1 Executive Business Summary
+
+Aqua Service Manager is a business operations platform for water filter service companies. It helps teams manage customer requests, field service execution, recurring AMC visits, invoice follow-up, and staff workflows from one system.
+
+### A.2 Business Outcomes Delivered
+
+- Reduced turnaround time from service completion to billing visibility
+- Better accountability for field and office teams
+- Reduced access-risk by strict role-based controls
+- Faster customer servicing due to operational dashboards and filters
+- Better continuity of recurring AMC service commitments
+
+### A.3 Who Uses the System
+
+- **Technician**: Executes assigned field services and closes daily work
+- **Staff**: Supports service operations, updates records, and billing workflows
+- **Manager**: Monitors branch operations and delivery performance
+- **Superadmin**: Governs people, permissions, and sensitive controls
+
+### A.4 Client-Facing End-to-End Business Flow
+
+```mermaid
+flowchart LR
+   C[Customer Request] --> S[Service Scheduled]
+   S --> A[Technician Assigned]
+   A --> W[Work Completed]
+   W --> B[Billing / Invoice]
+   B --> P[Payment Follow-up]
+   W --> R[AMC Next-Service Planning]
+```
+
+### A.5 Role Journey Summary (Client View)
+
+#### Technician Journey
+- Receives daily service queue
+- Opens service detail and performs work
+- Marks service complete with work details and parts
+- Moves to next assignment with minimal delay
+
+#### Staff Journey
+- Creates and updates service/customer records
+- Supports invoice workflows and day-book operations
+- Assists operational follow-up and data quality
+
+#### Manager Journey
+- Reviews branch-level operational progress
+- Tracks pending work and dues trends
+- Coordinates team throughput and issue escalation
+
+#### Superadmin Journey
+- Controls staff lifecycle and permissions
+- Handles sensitive actions (credential resend, staff delete)
+- Enforces governance and process correctness
+
+### A.6 Feature Showcase (Client Perspective)
+
+1. Role-based dashboards
+2. Service lifecycle management
+3. AMC recurring planning
+4. Invoice and dues visibility
+5. Inventory-aware service closure
+6. Staff governance and secure credential workflows
+
+### A.7 Business Case Study (Before vs After)
+
+#### Before
+- Slow completion experience during side-effect-heavy service closing
+- Mixed access visibility across modules
+- Manual effort to manage recurring service continuity
+
+#### After
+- Near-instant service completion response by moving non-critical side effects out of blocking path
+- Role-safe module access (for example, invoice restrictions for technicians)
+- Better recurring AMC continuity and operational confidence
+
+### A.8 Client Demo Screenshots (Placeholders)
+
+> Replace these placeholder paths with actual PNG/JPG screenshots from your app.
+
+#### Dashboard
+![Client Placeholder - Dashboard Overview](docs/screenshots/client/dashboard-overview.png)
+
+#### Service List
+![Client Placeholder - Service List](docs/screenshots/client/services-list.png)
+
+#### Service Completion Dialog
+![Client Placeholder - Service Completion](docs/screenshots/client/service-complete-dialog.png)
+
+#### Technician Focused Dashboard
+![Client Placeholder - Technician Dashboard](docs/screenshots/client/technician-dashboard.png)
+
+#### Invoice Module (for authorized roles)
+![Client Placeholder - Invoice Module](docs/screenshots/client/invoices-module.png)
+
+#### Staff Management (superadmin)
+![Client Placeholder - Staff Management](docs/screenshots/client/staff-module.png)
+
+### A.9 Value Proposition Statement
+
+Aqua Service Manager transforms fragmented service operations into a controlled, role-safe, measurable workflow engine for day-to-day business execution.
+
+---
+
+## Part B) Internal Engineering Documentation
+
 ---
 
 ## 1) Document Purpose
@@ -786,3 +899,36 @@ Never rely solely on client controls; enforce server authorization always.
 ## 19) Final Statement
 
 This documentation is now rewritten as a professional project specification and operations guide, with complete role-wise scenarios (technician, staff, manager, superadmin), user flows, architecture diagrams, business use cases, implementation journey, and future scope.
+
+---
+
+## 20) Engineering Screenshots (Placeholders)
+
+> Replace these paths with implementation-oriented screenshots for internal documentation and onboarding.
+
+### 20.1 Architecture and Flows
+![Internal Placeholder - Architecture Diagram](docs/screenshots/internal/architecture-diagram.png)
+![Internal Placeholder - Service Lifecycle Flow](docs/screenshots/internal/service-lifecycle-flow.png)
+
+### 20.2 API and Security
+![Internal Placeholder - Staff API Route](docs/screenshots/internal/staff-api-route.png)
+![Internal Placeholder - Resend Credentials API](docs/screenshots/internal/staff-resend-api.png)
+![Internal Placeholder - Role Access Matrix](docs/screenshots/internal/role-access-matrix.png)
+
+### 20.3 Performance and Reliability
+![Internal Placeholder - Service Completion Profiling](docs/screenshots/internal/service-completion-performance.png)
+![Internal Placeholder - Background Ops Behavior](docs/screenshots/internal/background-ops.png)
+
+### 20.4 Build and Release
+![Internal Placeholder - Build Success](docs/screenshots/internal/build-success.png)
+![Internal Placeholder - Release Log](docs/screenshots/internal/release-log.png)
+
+### 20.5 Suggested Screenshot Capture Checklist
+
+1. Login and role detection
+2. Sidebar per role (technician/staff/manager/superadmin)
+3. Dashboard differences by role
+4. Service completion dialog and result state
+5. Staff create/resend/delete actions
+6. Invoice access restriction for technician
+7. Build output and branch commit history
