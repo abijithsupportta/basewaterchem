@@ -54,20 +54,18 @@ export default function LoginPage() {
 
   return (
     <Card className="shadow-lg">
-      <CardHeader className="text-center">
-        <div className="flex justify-center mb-6">
-          <div className="flex items-center gap-3">
-            <Droplets className="h-12 w-12 text-blue-600" />
+      <CardHeader className="text-center pb-8">
+        <div className="flex justify-center">
+          <div className="flex items-center gap-4">
+            <Droplets className="h-16 w-16 text-blue-600" />
             <div className="text-left">
-              <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent" style={{ fontFamily: 'Georgia, serif', letterSpacing: '-0.5px' }}>
+              <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent" style={{ fontFamily: 'Georgia, serif', letterSpacing: '-0.5px' }}>
                 Base Chem Water<br/>Technologies
               </h1>
-              <p className="text-xs text-muted-foreground mt-1">Professional Water Chemistry Solutions</p>
+              <p className="text-sm text-muted-foreground mt-2 font-light tracking-wide">Professional Water Chemistry Solutions</p>
             </div>
           </div>
         </div>
-        <CardTitle className="text-2xl">Welcome Back</CardTitle>
-        <CardDescription>Sign in to the Service Manager</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
