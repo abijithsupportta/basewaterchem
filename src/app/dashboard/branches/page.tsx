@@ -26,6 +26,7 @@ export default function BranchesPage() {
 
   useEffect(() => {
     if (!canManageBranches(userRole)) {
+      setLoading(false);
       return;
     }
     fetchBranches();

@@ -7,39 +7,56 @@ import { apiSuccess, apiError } from '@/core/api';
 const ALLOWED_STAFF_ROLES: StaffRole[] = ['manager', 'staff', 'technician'];
 
 async function getCurrentUserRole() {
-  const supabase = await createServerSupabaseClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user) {
-    return { supabase, role: null as StaffRole | null, userId: null as string | null };
-  }
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      console.log('[Staff API] No user found:', userError?.message);
+      return { supabase, role: null as StaffRole | null, userId: null as string | null };
+    }
 
-  const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
-  if (metadataRole) {
-    return { supabase, role: metadataRole, userId: userData.user.id };
-  }
+    const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
+    if (metadataRole) {
+      console.log('[Staff API] Using metadata role:', metadataRole);
+      return { supabase, role: metadataRole, userId: userData.user.id };
+    }
 
-  const { data: staff, error: staffError } = await supabase
-    .from('staff')
-    .select('role')
-    .eq('auth_user_id', userData.user.id)
-    .maybeSingle();
+    const { data: staff, error: staffError } = await supabase
+      .from('staff')
+      .select('role')
+      .eq('auth_user_id', userData.user.id)
+      .maybeSingle();
 
-  if (staffError || !staff?.role) {
-    return { supabase, role: null as StaffRole | null, userId: userData.user.id };
+    if (staffError) {
+      console.error('[Staff API] Staff lookup error:', staffError);
+      return { supabase, role: null as StaffRole | null, userId: userData.user.id };
+    }
+
+    if (!staff?.role) {
+      console.log('[Staff API] No staff record found for user:', userData.user.id);
+      return { supabase, role: null as StaffRole | null, userId: userData.user.id };
+    }
+
+    console.log('[Staff API] User role:', staff.role);
+    return { supabase, role: staff.role as StaffRole, userId: userData.user.id };
+  } catch (error) {
+    console.error('[Staff API] Unexpected error in getCurrentUserRole:', error);
+    throw error;
   }
-  return { supabase, role: staff.role as StaffRole, userId: userData.user.id };
 }
 
 export async function GET() {
   try {
     const { supabase, role } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
+      console.log('[Staff API GET] Access denied for role:', role);
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can view staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only Admin or Manager can view staff.' } },
         { status: 403 }
       );
     }
 
+    console.log('[Staff API GET] Fetching staff list for role:', role);
     const { data, error } = await supabase
       .from('staff')
       .select(`
@@ -58,9 +75,15 @@ export async function GET() {
       `)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Staff API GET] Query error:', error);
+      throw error;
+    }
+
+    console.log('[Staff API GET] Successfully fetched', (data || []).length, 'staff records');
     return apiSuccess(data ?? []);
   } catch (error) {
+    console.error('[Staff API GET] Unexpected error:', error);
     return apiError(error);
   }
 }
