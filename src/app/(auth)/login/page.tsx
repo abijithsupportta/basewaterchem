@@ -55,12 +55,14 @@ export default function LoginPage() {
   return (
     <Card className="shadow-lg">
       <CardHeader className="text-center">
-        <div className="flex justify-center mb-4">
-          <div className="flex items-center gap-2">
-            <Droplets className="h-10 w-10 text-blue-500" />
+        <div className="flex justify-center mb-6">
+          <div className="flex items-center gap-3">
+            <Droplets className="h-12 w-12 text-blue-600" />
             <div className="text-left">
-              <h1 className="text-xl font-bold">Base Water Chemicals</h1>
-              <p className="text-xs text-muted-foreground">Kottayam</p>
+              <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent" style={{ fontFamily: 'Georgia, serif', letterSpacing: '-0.5px' }}>
+                Base Chem Water<br/>Technologies
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">Professional Water Chemistry Solutions</p>
             </div>
           </div>
         </div>
