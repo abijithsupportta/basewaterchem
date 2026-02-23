@@ -47,7 +47,7 @@ async function getCurrentUserRole() {
 }
 
 async function logEmailFailure(params: {
-  serviceSupabase: ReturnType<typeof createServiceRoleClient>;
+  serviceSupabase: any;
   recipientEmail: string;
   emailType: string;
   payload: Record<string, unknown>;
@@ -400,26 +400,17 @@ export async function DELETE(request: NextRequest) {
     }
 
     let reassignedStaffId: string | null = null;
-    if (role === 'manager' && userId) {
-      const { data: managerSelf } = await serviceSupabase
-        .from('staff')
-        .select('id')
-        .eq('auth_user_id', userId)
-        .maybeSingle();
-      reassignedStaffId = managerSelf?.id ?? null;
-    }
-
-    if (!reassignedStaffId) {
-      const { data: manager } = await serviceSupabase
-        .from('staff')
-        .select('id')
-        .eq('role', 'manager')
-        .eq('is_active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      reassignedStaffId = manager?.id ?? null;
-    }
+    
+    // Try to find an active manager to reassign to
+    const { data: manager } = await serviceSupabase
+      .from('staff')
+      .select('id')
+      .eq('role', 'manager')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    reassignedStaffId = manager?.id ?? null;
 
     if (!reassignedStaffId) {
       const { data: superadmin } = await serviceSupabase
