@@ -25,7 +25,7 @@ async function getCurrentUserRole() {
 }
 
 async function logEmailFailure(params: {
-  serviceSupabase: ReturnType<typeof createServiceRoleClient>;
+  serviceSupabase: any;
   recipientEmail: string;
   emailType: string;
   payload: Record<string, unknown>;

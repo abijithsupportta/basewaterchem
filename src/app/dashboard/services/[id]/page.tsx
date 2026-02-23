@@ -344,15 +344,17 @@ export default function ServiceDetailPage() {
       const stockPromises = items
         .filter((item) => item.inventory_product_id && item.qty > 0)
         .map((item) =>
-          supabase.rpc('log_stock_transaction', {
-            p_product_id: item.inventory_product_id,
-            p_transaction_type: 'service',
-            p_quantity: -item.qty,
-            p_reference_type: 'service',
-            p_reference_id: id,
-            p_notes: `Used in Service ${service.service_number || id}`,
-            p_created_by: completedByStaffId,
-          }).catch((err) => {
+          Promise.resolve(
+            supabase.rpc('log_stock_transaction', {
+              p_product_id: item.inventory_product_id,
+              p_transaction_type: 'service',
+              p_quantity: -item.qty,
+              p_reference_type: 'service',
+              p_reference_id: id,
+              p_notes: `Used in Service ${service.service_number || id}`,
+              p_created_by: completedByStaffId,
+            })
+          ).catch((err: any) => {
             console.error('Error deducting stock:', err);
             toast.error(`Warning: Stock not deducted for ${item.part_name}`);
           })
