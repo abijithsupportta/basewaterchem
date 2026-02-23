@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Loading } from '@/components/ui/loading';
 import { canAccessStaffModule, canDelete } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
+import { useBranches } from '@/hooks/use-branches';
 
 // Only allow adding these roles (no admin/superadmin)
 const ADDABLE_STAFF_ROLES = [
@@ -36,17 +37,11 @@ type StaffItem = {
   };
 };
 
-type Branch = {
-  id: string;
-  branch_name: string;
-  branch_code: string;
-};
-
 export default function StaffPage() {
   const userRole = useUserRole();
   const { selectedBranchId } = useBranchSelection();
+  const { branches } = useBranches();
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -62,23 +57,14 @@ export default function StaffPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [staffResponse, branchesResponse] = await Promise.all([
-          fetch('/api/staff'),
-          fetch('/api/branches'),
-        ]);
-
+        const staffResponse = await fetch('/api/staff');
         const staffPayload = await staffResponse.json();
-        const branchesPayload = await branchesResponse.json();
 
         if (!staffResponse.ok) {
           throw new Error(staffPayload?.error?.message || 'Failed to load staff');
         }
-        if (!branchesResponse.ok) {
-          throw new Error(branchesPayload?.error?.message || 'Failed to load branches');
-        }
 
         setStaffList(staffPayload.data ?? []);
-        setBranches(branchesPayload.data ?? []);
       } catch (error: any) {
         toast.error(error.message || 'Failed to load data');
       } finally {
