@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Receipt, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,12 +11,15 @@ import { Input } from '@/components/ui/input';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
 import { useInvoices } from '@/hooks/use-invoices';
+import { useUserRole } from '@/lib/use-user-role';
 import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
 
 export default function InvoicesPage() {
+  const router = useRouter();
+  const userRole = useUserRole();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState('');
@@ -23,6 +27,18 @@ export default function InvoicesPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+
+  // Prevent technicians from accessing invoices
+  useEffect(() => {
+    if (userRole === 'technician') {
+      router.replace('/dashboard');
+    }
+  }, [userRole, router]);
+
+  // If technician, return early to prevent rendering
+  if (userRole === 'technician') {
+    return <Loading />;
+  }
 
   useEffect(() => {
     setPage(1);
