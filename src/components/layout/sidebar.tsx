@@ -22,6 +22,12 @@ export function Sidebar() {
   const { user, signOut } = useAuth();
   const userRole = useUserRole();
   const [collapsed, setCollapsed] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogoutConfirm = async () => {
+    setShowLogoutModal(false);
+    await signOut();
+  };
 
   const visibleNavItems = NAV_ITEMS.filter((item) => {
     // Filter by role-based permissions
@@ -105,7 +111,7 @@ export function Sidebar() {
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-50"
-              onClick={signOut}
+              onClick={() => setShowLogoutModal(true)}
             >
               <LogOut className="h-5 w-5 shrink-0" />
               {!collapsed && <span className="text-sm">Sign Out</span>}
@@ -113,6 +119,42 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black bg-opacity-50" onClick={() => setShowLogoutModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Sign Out</h2>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Are you sure you want to sign out? You'll need to log in again to access the service manager.
+                  </p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowLogoutModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={handleLogoutConfirm}
+                  >
+                    Sign Out
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
