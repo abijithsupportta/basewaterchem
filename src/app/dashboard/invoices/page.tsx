@@ -12,8 +12,9 @@ import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
 import { useInvoices } from '@/hooks/use-invoices';
 import { useUserRole } from '@/lib/use-user-role';
-import { formatDate, formatCurrency, getStatusColor } from '@/lib/utils';
+import { formatDate, formatDateTime, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
 
@@ -27,6 +28,8 @@ export default function InvoicesPage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [latestCollectors, setLatestCollectors] = useState<Record<string, string>>({});
+  const [latestCollectionAt, setLatestCollectionAt] = useState<Record<string, string>>({});
 
   // Prevent technicians from accessing invoices
   useEffect(() => {
@@ -101,6 +104,74 @@ export default function InvoicesPage() {
     page,
     pageSize,
   });
+
+  useEffect(() => {
+    const loadLatestCollectors = async () => {
+      if (!invoices.length) {
+        setLatestCollectors({});
+        return;
+      }
+
+      const supabase = createBrowserClient();
+      const invoiceIds = invoices.map((inv: any) => inv.id);
+
+      const { data: payments } = await supabase
+        .from('invoice_payments')
+        .select('invoice_id, created_by, paid_at')
+        .in('invoice_id', invoiceIds)
+        .order('paid_at', { ascending: false });
+
+      if (!payments || payments.length === 0) {
+        setLatestCollectors({});
+        setLatestCollectionAt({});
+        return;
+      }
+
+      const latestByInvoice = new Map<string, string>();
+      const collectorIds = new Set<string>();
+
+      payments.forEach((payment) => {
+        if (!latestByInvoice.has(payment.invoice_id)) {
+          latestByInvoice.set(payment.invoice_id, payment.created_by || '');
+          if (payment.created_by) collectorIds.add(payment.created_by);
+        }
+      });
+
+      let staffMap: Record<string, string> = {};
+      if (collectorIds.size > 0) {
+        const { data: staffRows } = await supabase
+          .from('staff')
+          .select('id, full_name')
+          .in('id', Array.from(collectorIds));
+
+        if (staffRows) {
+          staffMap = staffRows.reduce((acc, row) => {
+            acc[row.id] = row.full_name || 'Unknown';
+            return acc;
+          }, {} as Record<string, string>);
+        }
+      }
+
+      const invoiceCollectorMap: Record<string, string> = {};
+      const invoiceCollectorTimeMap: Record<string, string> = {};
+      latestByInvoice.forEach((collectorId, invoiceId) => {
+        const payment = payments.find((p) => p.invoice_id === invoiceId);
+        if (payment?.paid_at) {
+          invoiceCollectorTimeMap[invoiceId] = payment.paid_at;
+        }
+        if (!collectorId) {
+          invoiceCollectorMap[invoiceId] = '-';
+          return;
+        }
+        invoiceCollectorMap[invoiceId] = staffMap[collectorId] || 'Unknown';
+      });
+
+      setLatestCollectors(invoiceCollectorMap);
+      setLatestCollectionAt(invoiceCollectorTimeMap);
+    };
+
+    void loadLatestCollectors();
+  }, [invoices]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -246,6 +317,15 @@ export default function InvoicesPage() {
                     <p className="text-sm text-muted-foreground mt-1">
                       {formatDate(inv.invoice_date)} | Total: {formatCurrency(inv.total_amount)} | Paid: {formatCurrency(inv.amount_paid)}
                       {inv.balance_due > 0 && <span className="text-red-600 font-semibold"> | Due: {formatCurrency(inv.balance_due)}</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Created by: {inv.created_by_staff_name || 'Unknown'} | Last collected by:{' '}
+                      <span
+                        className={latestCollectionAt[inv.id] ? 'cursor-help underline decoration-dotted underline-offset-2' : ''}
+                        title={latestCollectionAt[inv.id] ? `Collected on ${formatDateTime(latestCollectionAt[inv.id])}` : undefined}
+                      >
+                        {latestCollectors[inv.id] || '-'}
+                      </span>
                     </p>
                   </div>
                   <Badge className={getStatusColor(inv.status)}>{INVOICE_STATUS_LABELS[inv.status as keyof typeof INVOICE_STATUS_LABELS] || inv.status}</Badge>

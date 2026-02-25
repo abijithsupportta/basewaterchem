@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { useDashboardSessionOptional } from '@/providers/dashboard-session-provider';
 
 const STORAGE_KEY = 'selected-branch-id';
 const EVENT_NAME = 'branch-selection-changed';
@@ -51,11 +52,28 @@ export interface BranchOption {
 }
 
 export function useBranchOptions(enabled: boolean) {
+  const dashboardSession = useDashboardSessionOptional();
+
   const [options, setOptions] = useState<BranchOption[]>([{ value: 'all', label: 'All Branches' }]);
   const [loading, setLoading] = useState(false);
 
   const fetchBranches = useCallback(async () => {
-    if (!enabled) return;
+    if (!enabled) {
+      setOptions([{ value: 'all', label: 'All Branches' }]);
+      setLoading(false);
+      return;
+    }
+
+    if (dashboardSession) {
+      const branchOptions = dashboardSession.branches.map((branch) => ({
+        value: branch.id,
+        label: `${branch.branch_name} (${branch.branch_code})`,
+      }));
+
+      setOptions([{ value: 'all', label: 'All Branches' }, ...branchOptions]);
+      setLoading(dashboardSession.loading);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -79,11 +97,19 @@ export function useBranchOptions(enabled: boolean) {
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, dashboardSession]);
 
   useEffect(() => {
     fetchBranches();
   }, [fetchBranches]);
 
-  return { options, loading, refetch: fetchBranches };
+  const refetch = useCallback(async () => {
+    if (dashboardSession && enabled) {
+      await dashboardSession.refresh();
+      return;
+    }
+    await fetchBranches();
+  }, [dashboardSession, enabled, fetchBranches]);
+
+  return { options, loading, refetch };
 }

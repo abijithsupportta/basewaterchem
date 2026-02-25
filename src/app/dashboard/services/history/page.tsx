@@ -79,6 +79,9 @@ export default function ServiceHistoryPage() {
                         : SERVICE_TYPE_LABELS[s.service_type as keyof typeof SERVICE_TYPE_LABELS]} | Completed: {formatDate(s.completed_date)}
                       {s.actual_amount > 0 && <> | {formatCurrency(s.actual_amount)}</>}
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Created by: {s.created_by_staff_name || 'Unknown'} | Completed by: {s.completed_by_staff_name || 'Unknown'}
+                    </p>
                   </div>
                   <Badge variant="default">Completed</Badge>
                 </CardContent>

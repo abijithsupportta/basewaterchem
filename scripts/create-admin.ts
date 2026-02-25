@@ -34,7 +34,7 @@ async function main() {
     email: adminEmail,
     password: adminPassword,
     email_confirm: true, // auto-confirm the email
-    user_metadata: { full_name: 'Super Admin', role: 'admin' },
+    user_metadata: { full_name: 'Super Admin', role: 'superadmin' },
   });
 
   if (authError) {
@@ -79,7 +79,7 @@ async function ensureStaffRecord(authUserId: string) {
     full_name: 'Super Admin',
     email: adminEmail,
     phone: '',
-    role: 'admin',
+    role: 'superadmin',
     is_active: true,
   });
 
@@ -89,7 +89,7 @@ async function ensureStaffRecord(authUserId: string) {
     process.exit(1);
   }
 
-  console.log('Staff record created with role: admin');
+  console.log('Staff record created with role: superadmin');
   console.log('\n✅ Superadmin account ready!');
   console.log(`   Email:    ${adminEmail}`);
   console.log(`   Password: ${adminPassword}`);

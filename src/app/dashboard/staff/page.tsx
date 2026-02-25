@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
-import { useUserRole } from '@/lib/use-user-role';
+import { useUserRoleState } from '@/lib/use-user-role';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { Loading } from '@/components/ui/loading';
-import { canAccessStaffModule, canDelete } from '@/lib/authz';
+import { canDelete } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 import { useBranches } from '@/hooks/use-branches';
+import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
 
-// Only allow adding these roles (no admin/superadmin)
+// Only allow adding these roles (no superadmin)
 const ADDABLE_STAFF_ROLES = [
   { value: 'manager', label: 'Manager' },
   { value: 'staff', label: 'Staff' },
@@ -25,7 +26,7 @@ type StaffItem = {
   auth_user_id?: string | null;
   full_name: string;
   email: string;
-  role: RoleOption | 'admin' | 'superadmin';
+  role: RoleOption | 'superadmin';
   branch_id: string | null;
   is_active: boolean;
   phone: string | null;
@@ -38,12 +39,22 @@ type StaffItem = {
   };
 };
 
+type StaffCachePayload = {
+  forbidden: boolean;
+  staffList: StaffItem[];
+};
+
+const STAFF_CACHE_KEY = 'dashboard:staff:list:v1';
+const STAFF_CACHE_TTL_MS = 600000;
+
 export default function StaffPage() {
-  const userRole = useUserRole();
+  const { role: resolvedUserRole, loading: roleLoading } = useUserRoleState();
+  const userRole = resolvedUserRole ?? 'staff';
   const { selectedBranchId } = useBranchSelection();
   const { branches } = useBranches();
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResendModal, setShowResendModal] = useState(false);
@@ -63,18 +74,39 @@ export default function StaffPage() {
   const [branchId, setBranchId] = useState<string>('');
 
   const refreshStaffList = async (showSpinner: boolean) => {
+    const cached = readStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, STAFF_CACHE_TTL_MS);
+
     if (showSpinner) {
-      setLoading(true);
+      setLoading(!cached);
     }
+
+    if (cached) {
+      setForbidden(cached.forbidden);
+      setStaffList(cached.staffList);
+    }
+
+    setForbidden(false);
+
     try {
       const staffResponse = await fetch('/api/staff');
       const staffPayload = await staffResponse.json();
+
+      if (staffResponse.status === 403) {
+        setForbidden(true);
+        setStaffList([]);
+        writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, { forbidden: true, staffList: [] });
+        return;
+      }
 
       if (!staffResponse.ok) {
         throw new Error(staffPayload?.error?.message || 'Failed to load staff');
       }
 
       setStaffList(staffPayload.data ?? []);
+      writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, {
+        forbidden: false,
+        staffList: staffPayload.data ?? [],
+      });
     } catch (error: any) {
       toast.error(error.message || 'Failed to load data');
     } finally {
@@ -85,16 +117,36 @@ export default function StaffPage() {
   };
 
   useEffect(() => {
+    const cached = readStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, STAFF_CACHE_TTL_MS);
+
+    if (cached) {
+      setForbidden(cached.forbidden);
+      setStaffList(cached.staffList);
+      setLoading(false);
+    }
+
     const loadData = async () => {
       try {
+        setForbidden(false);
         const staffResponse = await fetch('/api/staff');
         const staffPayload = await staffResponse.json();
+
+        if (staffResponse.status === 403) {
+          setForbidden(true);
+          setStaffList([]);
+          writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, { forbidden: true, staffList: [] });
+          return;
+        }
 
         if (!staffResponse.ok) {
           throw new Error(staffPayload?.error?.message || 'Failed to load staff');
         }
 
         setStaffList(staffPayload.data ?? []);
+        writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, {
+          forbidden: false,
+          staffList: staffPayload.data ?? [],
+        });
       } catch (error: any) {
         toast.error(error.message || 'Failed to load data');
       } finally {
@@ -102,18 +154,18 @@ export default function StaffPage() {
       }
     };
 
-    if (canAccessStaffModule(userRole)) {
-      loadData();
-    } else {
-      setLoading(false);
+    if (roleLoading) {
+      return;
     }
-  }, [userRole]);
 
-  if (loading) {
+    loadData();
+  }, [roleLoading]);
+
+  if (loading || roleLoading) {
     return <Loading />;
   }
 
-  if (!canAccessStaffModule(userRole)) {
+  if (forbidden) {
     return <div className="p-8 text-center text-red-600">Access denied.</div>;
   }
 
@@ -208,7 +260,11 @@ export default function StaffPage() {
         throw new Error(payload?.error?.message || 'Failed to update staff status');
       }
 
-      setStaffList((prev) => prev.map((s) => (s.id === staff.id ? payload.data : s)));
+      setStaffList((prev) => {
+        const updated = prev.map((s) => (s.id === staff.id ? payload.data : s));
+        writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, { forbidden: false, staffList: updated });
+        return updated;
+      });
       toast.success(makeActive ? 'Staff activated' : 'Staff deactivated');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update staff status');
@@ -236,7 +292,11 @@ export default function StaffPage() {
         throw new Error(payload?.error?.message || 'Failed to delete staff');
       }
 
-      setStaffList((prev) => prev.filter((s) => s.id !== staff.id));
+      setStaffList((prev) => {
+        const updated = prev.filter((s) => s.id !== staff.id);
+        writeStaleCache<StaffCachePayload>(STAFF_CACHE_KEY, { forbidden: false, staffList: updated });
+        return updated;
+      });
       toast.success('Staff deleted');
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete staff');

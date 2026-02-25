@@ -250,7 +250,7 @@ export default function ExpensesPage() {
       {!canManageExpenses && (
         <Card className="border-amber-200 bg-amber-50/40">
           <CardContent className="py-3 text-sm text-amber-700">
-            View-only mode: only admin/manager/staff can add or delete expenses.
+            View-only mode: only superadmin/manager/staff can add or delete expenses.
           </CardContent>
         </Card>
       )}

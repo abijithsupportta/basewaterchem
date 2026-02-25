@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     if (!canAssignTechnician(userRole)) {
       return NextResponse.json(
-        { error: 'Forbidden: Only admin/manager/staff can assign technician.' },
+        { error: 'Forbidden: Only superadmin/manager/staff can assign technician.' },
         { status: 403 }
       );
     }

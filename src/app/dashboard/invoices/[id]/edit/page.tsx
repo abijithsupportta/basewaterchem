@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Plus, Trash2, Package, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,6 +22,14 @@ import { formatCurrency } from '@/lib/utils';
 import { DEFAULT_TAX_PERCENT } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { InventoryProduct } from '@/types/inventory';
+import {
+  applyStockDeltas,
+  buildStockDeltas,
+  getCurrentStaffId,
+  normalizeIntegerQuantity,
+  normalizeStockLines,
+  validateStockAvailabilityForDeltas,
+} from '@/lib/stock-ledger';
 
 // Export default to match page component pattern
 export default function EditInvoicePage() {
@@ -33,7 +42,7 @@ function EditInvoiceContent() {
   const { customers, createCustomer } = useCustomers();
   const { branches } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
-  const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>([]);
+  const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>(['manual']);
   const [existingInvoice, setExistingInvoice] = useState<{ amountPaid: number; status: string }>({ amountPaid: 0, status: 'draft' });
   const [loading, setLoading] = useState(true);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -68,12 +77,28 @@ function EditInvoiceContent() {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'items' });
+  const items = watch('items') || [];
 
   useEffect(() => {
-    if (itemSourceTypes.length === 0) {
-      setItemSourceTypes(['manual']);
-    }
-  }, [itemSourceTypes.length]);
+    setItemSourceTypes((prev) => {
+      const next = [...prev];
+
+      if (next.length > items.length) {
+        next.length = items.length;
+      }
+
+      for (let i = 0; i < items.length; i++) {
+        const hasStockProduct = Boolean(items[i]?.inventory_product_id);
+        if (!next[i]) {
+          next[i] = hasStockProduct ? 'stock' : 'manual';
+        } else if (hasStockProduct && next[i] !== 'stock') {
+          next[i] = 'stock';
+        }
+      }
+
+      return next.length ? next : ['manual'];
+    });
+  }, [items]);
 
   // Fetch inventory and invoice data
   useEffect(() => {
@@ -139,18 +164,20 @@ function EditInvoiceContent() {
 
   const handleAddItem = () => {
     append({ item_name: '', description: '', quantity: 1, unit_price: 0, inventory_product_id: null });
-    setItemSourceTypes([...itemSourceTypes, 'manual']);
+    setItemSourceTypes((prev) => [...prev, 'manual']);
   };
 
   const handleRemoveItem = (index: number) => {
     remove(index);
-    setItemSourceTypes(itemSourceTypes.filter((_, i) => i !== index));
+    setItemSourceTypes((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSourceTypeChange = (index: number, type: 'manual' | 'stock') => {
-    const updatedTypes = [...itemSourceTypes];
-    updatedTypes[index] = type;
-    setItemSourceTypes(updatedTypes);
+    setItemSourceTypes((prev) => {
+      const next = [...prev];
+      next[index] = type;
+      return next;
+    });
 
     if (type === 'manual') {
       setValue(`items.${index}.inventory_product_id`, null);
@@ -175,7 +202,6 @@ function EditInvoiceContent() {
     }
   };
 
-  const items = watch('items') || [];
   const taxPercent = watch('tax_percent') || 0;
   const discountAmount = watch('discount_amount') || 0;
   const amcEnabled = watch('amc_enabled');
@@ -187,6 +213,50 @@ function EditInvoiceContent() {
     try {
       const supabase = createBrowserClient();
       const { items: itemsData, ...invoiceData } = data;
+
+      const normalizedItems = (itemsData || []).map((item: any) => ({
+        ...item,
+        quantity: normalizeIntegerQuantity(item.quantity),
+        unit_price: Math.max(0, Number(item.unit_price) || 0),
+      }));
+
+      const { data: previousItems, error: previousItemsError } = await supabase
+        .from('invoice_items')
+        .select('inventory_product_id, quantity')
+        .eq('invoice_id', id);
+
+      if (previousItemsError) {
+        throw new Error(previousItemsError.message || 'Failed to load existing invoice items.');
+      }
+
+      const previousStockLines = normalizeStockLines(
+        (previousItems || []).map((item: any) => ({
+          productId: item.inventory_product_id,
+          quantity: item.quantity,
+          label: item.item_name,
+        }))
+      );
+
+      const nextStockLines = normalizeStockLines(
+        normalizedItems.map((item: any) => ({
+          productId: item.inventory_product_id,
+          quantity: item.quantity,
+          label: item.item_name,
+        }))
+      );
+
+      const stockDeltas = buildStockDeltas(previousStockLines, nextStockLines);
+      await validateStockAvailabilityForDeltas(supabase, stockDeltas);
+
+      const createdByStaffId = await getCurrentStaffId(supabase);
+
+      await applyStockDeltas(supabase, {
+        deltas: stockDeltas,
+        referenceType: 'invoice',
+        referenceId: id,
+        referenceLabel: 'Stock adjusted via Invoice Update',
+        createdBy: createdByStaffId,
+      });
 
       const amountPaid = Math.max(0, existingInvoice.amountPaid || 0);
       const balanceDue = Math.max(0, total - amountPaid);
@@ -212,8 +282,8 @@ function EditInvoiceContent() {
       await supabase.from('invoice_items').delete().eq('invoice_id', id);
 
       // Create new items
-      if (itemsData.length > 0) {
-        const itemsToInsert = itemsData.map((item: any, idx: number) => ({
+      if (normalizedItems.length > 0) {
+        const itemsToInsert = normalizedItems.map((item: any, idx: number) => ({
           invoice_id: id,
           item_name: item.item_name || null,
           description: item.description,
@@ -225,38 +295,6 @@ function EditInvoiceContent() {
         }));
 
         await supabase.from('invoice_items').insert(itemsToInsert);
-
-        // Handle stock transactions for changed items
-        const { data: authData } = await supabase.auth.getUser();
-        let createdByStaffId: string | null = null;
-        if (authData.user) {
-          const { data: staff } = await supabase
-            .from('staff')
-            .select('id')
-            .eq('auth_user_id', authData.user.id)
-            .maybeSingle();
-          createdByStaffId = staff?.id ?? null;
-        }
-
-        // Deduct stock for new stock items
-        for (const item of itemsData) {
-          if (item.inventory_product_id && item.quantity > 0) {
-            try {
-              await supabase.rpc('log_stock_transaction', {
-                p_product_id: item.inventory_product_id,
-                p_transaction_type: 'sale',
-                p_quantity: -item.quantity,
-                p_reference_type: 'invoice',
-                p_reference_id: id,
-                p_notes: `Sold via Invoice Update`,
-                p_created_by: createdByStaffId,
-              });
-            } catch (stockError) {
-              console.error('Error deducting stock:', stockError);
-              toast.error(`Warning: Stock not deducted for ${item.item_name}`);
-            }
-          }
-        }
       }
 
       toast.success('Invoice updated!');
@@ -434,11 +472,19 @@ function EditInvoiceContent() {
           <CardContent className="space-y-4">
             {fields.map((field, index) => (
               <div key={field.id} className="space-y-3 border rounded-lg p-3 bg-muted/30">
+                {(() => {
+                  const sourceType: 'manual' | 'stock' =
+                    itemSourceTypes[index] === 'stock' || Boolean(watch(`items.${index}.inventory_product_id`))
+                      ? 'stock'
+                      : 'manual';
+
+                  return (
+                    <>
                 <div className="flex items-center gap-4 mb-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
-                      checked={itemSourceTypes[index] === 'manual'}
+                      checked={sourceType === 'manual'}
                       onChange={() => handleSourceTypeChange(index, 'manual')}
                       className="h-4 w-4"
                     />
@@ -447,7 +493,7 @@ function EditInvoiceContent() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="radio"
-                      checked={itemSourceTypes[index] === 'stock'}
+                      checked={sourceType === 'stock'}
                       onChange={() => handleSourceTypeChange(index, 'stock')}
                       className="h-4 w-4"
                     />
@@ -455,10 +501,13 @@ function EditInvoiceContent() {
                       <Package className="h-4 w-4" /> From Stock
                     </span>
                   </label>
+                  <Badge variant="outline" className="ml-auto h-5 px-2 text-[10px] leading-none">
+                    {sourceType === 'stock' ? 'Stock' : 'Manual'}
+                  </Badge>
                 </div>
 
                 <div className="grid grid-cols-12 gap-2 items-end">
-                  {itemSourceTypes[index] === 'stock' ? (
+                  {sourceType === 'stock' ? (
                     <>
                       <div className="col-span-4 space-y-1">
                         {index === 0 && <Label className="text-xs">Select Product</Label>}
@@ -497,7 +546,7 @@ function EditInvoiceContent() {
                       type="number"
                       {...register(`items.${index}.quantity`, { valueAsNumber: true })}
                       max={
-                        itemSourceTypes[index] === 'stock' && watch(`items.${index}.inventory_product_id`)
+                        sourceType === 'stock' && watch(`items.${index}.inventory_product_id`)
                           ? inventoryProducts.find((p) => p.id === watch(`items.${index}.inventory_product_id`))?.stock_quantity
                           : undefined
                       }
@@ -523,6 +572,9 @@ function EditInvoiceContent() {
                     )}
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
             <div className="border-t pt-4 space-y-2 text-right">

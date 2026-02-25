@@ -1,6 +1,11 @@
 import { createServerClient, type CookieMethodsServer } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const STAFF_ACTIVE_CACHE_TTL_SECONDS = 60;
+const STAFF_ACTIVE_COOKIE = 'staff_active_cache';
+const STAFF_ACTIVE_UID_COOKIE = 'staff_active_uid';
+const STAFF_ACTIVE_TS_COOKIE = 'staff_active_ts';
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -35,18 +40,52 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/forgot-password');
 
   if (user && !isAuthPage) {
-    const { data: staff } = await supabase
-      .from('staff')
-      .select('is_active')
-      .eq('auth_user_id', user.id)
-      .maybeSingle();
+    const now = Date.now();
+    const cachedUid = request.cookies.get(STAFF_ACTIVE_UID_COOKIE)?.value;
+    const cachedActive = request.cookies.get(STAFF_ACTIVE_COOKIE)?.value;
+    const cachedTsRaw = request.cookies.get(STAFF_ACTIVE_TS_COOKIE)?.value;
+    const cachedTs = cachedTsRaw ? Number(cachedTsRaw) : 0;
+    const hasFreshCache =
+      cachedUid === user.id &&
+      !!cachedActive &&
+      Number.isFinite(cachedTs) &&
+      now - cachedTs < STAFF_ACTIVE_CACHE_TTL_SECONDS * 1000;
 
-    if (staff && staff.is_active === false) {
-      await supabase.auth.signOut();
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      url.searchParams.set('error', 'account_inactive');
-      return NextResponse.redirect(url);
+    if (hasFreshCache) {
+      if (cachedActive === '0') {
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = '/login';
+        url.searchParams.set('error', 'account_inactive');
+        return NextResponse.redirect(url);
+      }
+    } else {
+      const { data: staff } = await supabase
+        .from('staff')
+        .select('is_active')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      const isActive = staff?.is_active !== false;
+
+      const cookieOptions = {
+        path: '/',
+        maxAge: STAFF_ACTIVE_CACHE_TTL_SECONDS,
+        httpOnly: true,
+        sameSite: 'lax' as const,
+      };
+
+      supabaseResponse.cookies.set(STAFF_ACTIVE_UID_COOKIE, user.id, cookieOptions);
+      supabaseResponse.cookies.set(STAFF_ACTIVE_COOKIE, isActive ? '1' : '0', cookieOptions);
+      supabaseResponse.cookies.set(STAFF_ACTIVE_TS_COOKIE, String(now), cookieOptions);
+
+      if (!isActive) {
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = '/login';
+        url.searchParams.set('error', 'account_inactive');
+        return NextResponse.redirect(url);
+      }
     }
   }
 

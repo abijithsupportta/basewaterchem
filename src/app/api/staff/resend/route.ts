@@ -10,16 +10,20 @@ async function getCurrentUserRole() {
     return { role: null as StaffRole | null };
   }
 
-  const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
-  if (metadataRole) {
-    return { role: metadataRole };
-  }
-
   const { data: staff } = await supabase
     .from('staff')
     .select('role')
     .eq('auth_user_id', userData.user.id)
     .maybeSingle();
+
+  if (staff?.role) {
+    return { role: staff.role as StaffRole };
+  }
+
+  const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
+  if (metadataRole) {
+    return { role: metadataRole };
+  }
 
   return { role: (staff?.role as StaffRole) || null };
 }

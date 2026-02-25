@@ -20,8 +20,53 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import { downloadDayBookPDF } from '@/lib/daybook-pdf';
 import { canAccessDashboard } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
-import { useUserRole } from '@/lib/use-user-role';
+import { useUserRoleState } from '@/lib/use-user-role';
 import type { InventoryProduct } from '@/types/inventory';
+import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
+import { useDashboardSessionOptional } from '@/providers/dashboard-session-provider';
+
+type DashboardCachePayload = {
+  services: any[];
+  pendingServices: any[];
+  totalCustomers: number;
+  pendingPayments: number;
+  invoices: any[];
+  expenses: any[];
+  inventoryProducts: InventoryProduct[];
+  staffId: string | null;
+};
+
+const DASHBOARD_CACHE_TTL_MS = 600000;
+
+function DashboardContentSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div>
+        <div className="h-8 w-40 rounded bg-muted" />
+        <div className="mt-2 h-4 w-72 rounded bg-muted" />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="h-8 w-20 rounded-full bg-muted" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="rounded-xl border p-5">
+            <div className="h-4 w-20 rounded bg-muted" />
+            <div className="mt-3 h-7 w-16 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl border p-5 space-y-3">
+        <div className="h-5 w-40 rounded bg-muted" />
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-12 w-full rounded bg-muted" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const TIME_CHIPS = [
   { value: 'today', label: 'Today' },
@@ -64,8 +109,10 @@ function getDateRange(period: string): { from?: string; to?: string } {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const dashboardSession = useDashboardSessionOptional();
   const { selectedBranchId } = useBranchSelection();
-  const userRole = useUserRole();
+  const { role: resolvedUserRole, loading: roleLoading } = useUserRoleState();
+  const userRole = resolvedUserRole ?? 'staff';
   const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -81,33 +128,11 @@ export default function DashboardPage() {
 
   // Redirect staff away from dashboard
   useEffect(() => {
-    let cancelled = false;
-
-    const resolveRoleAndRedirect = async () => {
-      const supabase = createBrowserClient();
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user || cancelled) return;
-
-      const { data: staff } = await supabase
-        .from('staff')
-        .select('role')
-        .eq('auth_user_id', data.user.id)
-        .maybeSingle();
-
-      const metadataRole = data.user.user_metadata?.role as string | undefined;
-      const effectiveRole = (staff?.role || metadataRole || 'staff') as any;
-
-      if (!cancelled && effectiveRole && !canAccessDashboard(effectiveRole)) {
-        router.push('/dashboard/services');
-      }
-    };
-
-    resolveRoleAndRedirect();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+    if (roleLoading) return;
+    if (userRole && !canAccessDashboard(userRole)) {
+      router.replace('/dashboard/services');
+    }
+  }, [router, userRole, roleLoading]);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -116,22 +141,33 @@ export default function DashboardPage() {
     return getDateRange(timeFilter);
   }, [timeFilter, customFrom, customTo]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const dashboardCacheKey = useMemo(
+    () =>
+      `dashboard:summary:v1:${userRole}:${selectedBranchId}:${dateRange.from ?? 'none'}:${dateRange.to ?? 'none'}`,
+    [userRole, selectedBranchId, dateRange.from, dateRange.to]
+  );
+
+  const applyDashboardData = useCallback((payload: DashboardCachePayload) => {
+    setServices(payload.services ?? []);
+    setPendingServices(payload.pendingServices ?? []);
+    setTotalCustomers(payload.totalCustomers ?? 0);
+    setPendingPayments(payload.pendingPayments ?? 0);
+    setInvoices(payload.invoices ?? []);
+    setExpenses(payload.expenses ?? []);
+    setInventoryProducts(payload.inventoryProducts ?? []);
+    setStaffId(payload.staffId ?? null);
+  }, []);
+
+  const fetchData = useCallback(async (background = false) => {
+    if (!background) {
+      setLoading(true);
+    }
+
     const supabase = createBrowserClient();
     const todayStr = new Date().toISOString().split('T')[0];
 
-    let currentStaffId: string | null = null;
-    const { data: authData } = await supabase.auth.getUser();
-    if (authData?.user) {
-      const { data: staffRow } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('auth_user_id', authData.user.id)
-        .maybeSingle();
-      currentStaffId = staffRow?.id ?? null;
-      setStaffId(currentStaffId);
-    }
+    const currentStaffId = dashboardSession?.staffId ?? null;
+    setStaffId(currentStaffId);
 
     if (userRole === 'technician') {
       let techSrvQuery = supabase
@@ -160,7 +196,21 @@ export default function DashboardPage() {
       setInvoices([]);
       setExpenses([]);
       setInventoryProducts((stockRes.data as InventoryProduct[]) || []);
-      setLoading(false);
+      const nextPayload: DashboardCachePayload = {
+        services: srvRes.data || [],
+        pendingServices: [],
+        totalCustomers: 0,
+        pendingPayments: 0,
+        invoices: [],
+        expenses: [],
+        inventoryProducts: (stockRes.data as InventoryProduct[]) || [],
+        staffId: currentStaffId,
+      };
+      writeStaleCache<DashboardCachePayload>(dashboardCacheKey, nextPayload);
+
+      if (!background) {
+        setLoading(false);
+      }
       return;
     }
 
@@ -234,10 +284,34 @@ export default function DashboardPage() {
     setPendingPayments(invCountRes.count || 0);
     setInvoices(invDataRes.data || []);
     setExpenses(expRes.data || []);
-    setLoading(false);
-  }, [dateRange, selectedBranchId, userRole]);
+    const nextPayload: DashboardCachePayload = {
+      services: srvRes.data || [],
+      pendingServices: pendRes.data || [],
+      totalCustomers: custRes.count || 0,
+      pendingPayments: invCountRes.count || 0,
+      invoices: invDataRes.data || [],
+      expenses: expRes.data || [],
+      inventoryProducts: [],
+      staffId: currentStaffId,
+    };
+    writeStaleCache<DashboardCachePayload>(dashboardCacheKey, nextPayload);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+    if (!background) {
+      setLoading(false);
+    }
+  }, [dateRange, selectedBranchId, userRole, dashboardSession?.staffId, dashboardCacheKey]);
+
+  useEffect(() => {
+    if (roleLoading) return;
+
+    const cached = readStaleCache<DashboardCachePayload>(dashboardCacheKey, DASHBOARD_CACHE_TTL_MS);
+    if (cached) {
+      applyDashboardData(cached);
+      setLoading(false);
+    }
+
+    void fetchData(Boolean(cached));
+  }, [fetchData, applyDashboardData, dashboardCacheKey, roleLoading]);
 
   // Compute stats from filtered services
   const stats = useMemo(() => {
@@ -377,6 +451,18 @@ export default function DashboardPage() {
       typeof p.min_stock_level === 'number' && p.stock_quantity <= p.min_stock_level
     );
   }, [inventoryProducts]);
+
+  const hasPrimaryData =
+    services.length > 0 ||
+    pendingServices.length > 0 ||
+    invoices.length > 0 ||
+    expenses.length > 0 ||
+    totalCustomers > 0 ||
+    pendingPayments > 0;
+
+  if (!roleLoading && userRole !== 'technician' && loading && !hasPrimaryData) {
+    return <DashboardContentSkeleton />;
+  }
 
   if (userRole === 'technician') {
     return (

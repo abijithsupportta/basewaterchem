@@ -4,7 +4,6 @@ export const APP_DESCRIPTION = 'Service Management System for Aqua Filter Servic
 
 export const ROLES = {
   SUPERADMIN: 'superadmin',
-  ADMIN: 'admin',
   MANAGER: 'manager',
   STAFF: 'staff',
   TECHNICIAN: 'technician',
@@ -12,7 +11,6 @@ export const ROLES = {
 
 export const ROLE_LABELS: Record<string, string> = {
   superadmin: 'Super Admin',
-  admin: 'Administrator',
   manager: 'Manager',
   staff: 'Staff',
   technician: 'Technician',
@@ -58,22 +56,21 @@ export const DEFAULT_TAX_PERCENT = 18; // GST
 export const ITEMS_PER_PAGE = 20;
 
 export const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', roles: ['superadmin', 'admin', 'manager', 'technician'] },
-  { label: 'Day Book', href: '/dashboard/day-book', icon: 'Wallet', roles: ['superadmin', 'admin', 'manager', 'staff', 'technician'] },
-  { label: 'Customers', href: '/dashboard/customers', icon: 'Users', roles: ['superadmin', 'admin', 'manager', 'staff', 'technician'] },
-  { label: 'Services', href: '/dashboard/services', icon: 'Wrench', roles: ['superadmin', 'admin', 'manager', 'staff', 'technician'] },
-  { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays', roles: ['superadmin', 'admin', 'manager', 'staff', 'technician'] },
-  { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt', roles: ['superadmin', 'admin', 'manager', 'staff'] },
-  { label: 'Inventory', href: '/dashboard/inventory/products', icon: 'Package', roles: ['superadmin', 'admin', 'manager', 'staff'] },
-  { label: 'Expenses', href: '/dashboard/expenses', icon: 'Wallet', roles: ['superadmin', 'admin', 'manager', 'staff'] },
-  { label: 'Branches', href: '/dashboard/branches', icon: 'Building2', roles: ['superadmin', 'admin', 'manager'] },
-  { label: 'Staff', href: '/dashboard/staff', icon: 'Users', roles: ['superadmin', 'admin', 'manager'] },
-  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['superadmin', 'admin', 'manager'] },
+  { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', roles: ['superadmin', 'manager', 'technician'] },
+  { label: 'Day Book', href: '/dashboard/day-book', icon: 'Wallet', roles: ['superadmin', 'manager', 'staff', 'technician'] },
+  { label: 'Customers', href: '/dashboard/customers', icon: 'Users', roles: ['superadmin', 'manager', 'staff', 'technician'] },
+  { label: 'Services', href: '/dashboard/services', icon: 'Wrench', roles: ['superadmin', 'manager', 'staff', 'technician'] },
+  { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays', roles: ['superadmin', 'manager', 'staff', 'technician'] },
+  { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt', roles: ['superadmin', 'manager', 'staff'] },
+  { label: 'Inventory', href: '/dashboard/inventory/products', icon: 'Package', roles: ['superadmin', 'manager', 'staff'] },
+  { label: 'Expenses', href: '/dashboard/expenses', icon: 'Wallet', roles: ['superadmin', 'manager', 'staff'] },
+  { label: 'Branches', href: '/dashboard/branches', icon: 'Building2', roles: ['superadmin', 'manager'] },
+  { label: 'Staff', href: '/dashboard/staff', icon: 'Users', roles: ['superadmin', 'manager'] },
+  { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['superadmin', 'manager'] },
 ];
 
 export const STAFF_ROLES = [
   { value: 'superadmin', label: 'Super Admin' },
-  { value: 'admin', label: 'Admin' },
   { value: 'manager', label: 'Manager' },
   { value: 'staff', label: 'Staff' },
   { value: 'technician', label: 'Technician' },

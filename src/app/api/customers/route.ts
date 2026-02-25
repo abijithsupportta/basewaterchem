@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const user = (await supabase.auth.getUser()).data.user;
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
     if (!canManageCustomers(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only admin/manager can create customers.' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager can create customers.' }, { status: 403 });
     }
 
     const repo = new CustomerRepository(supabase);

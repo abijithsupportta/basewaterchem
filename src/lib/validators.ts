@@ -58,6 +58,10 @@ export const invoiceItemSchema = z.object({
   description: z.string().optional(),
   quantity: z.coerce.number().min(1),
   unit_price: z.coerce.number().min(0),
+  inventory_product_id: z.preprocess(
+    (value) => (value === '' ? null : value),
+    z.string().uuid().nullable().optional()
+  ),
 });
 
 export const invoiceSchema = z.object({

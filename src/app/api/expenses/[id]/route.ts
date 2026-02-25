@@ -26,7 +26,7 @@ export async function PATCH(
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
 
     if (!canCreateOrEdit(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can edit expenses.' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager/staff can edit expenses.' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -51,7 +51,7 @@ export async function DELETE(
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
 
     if (!canCreateOrEdit(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can delete expenses.' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager/staff can delete expenses.' }, { status: 403 });
     }
 
     const repo = new ExpenseRepository(supabase);

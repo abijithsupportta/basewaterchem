@@ -13,6 +13,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { InventoryCategory, InventoryProduct } from '@/types/inventory';
 import { useUserRole } from '@/lib/use-user-role';
 import { canDelete } from '@/lib/authz';
+import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
+
+type InventoryProductsCachePayload = {
+  categories: InventoryCategory[];
+  products: InventoryProduct[];
+};
+
+const INVENTORY_PRODUCTS_CACHE_KEY = 'dashboard:inventory:products:v1';
+const INVENTORY_PRODUCTS_CACHE_TTL_MS = 600000;
 
 export default function ProductsPage() {
   const userRole = useUserRole();
@@ -30,30 +39,55 @@ export default function ProductsPage() {
   const ITEMS_PER_PAGE = 20;
 
   useEffect(() => {
-    fetchData();
+    const cached = readStaleCache<InventoryProductsCachePayload>(
+      INVENTORY_PRODUCTS_CACHE_KEY,
+      INVENTORY_PRODUCTS_CACHE_TTL_MS
+    );
+
+    if (cached) {
+      setCategories(cached.categories);
+      setProducts(cached.products);
+      setLoading(false);
+    }
+
+    fetchData(Boolean(cached));
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (background = false) => {
+    if (!background) {
+      setLoading(true);
+    }
     try {
       const [categoriesRes, productsRes] = await Promise.all([
         fetch('/api/inventory/categories'),
         fetch('/api/inventory/products'),
       ]);
 
+      let nextCategories: InventoryCategory[] = categories;
+      let nextProducts: InventoryProduct[] = products;
+
       if (categoriesRes.ok) {
         const categoriesData = await categoriesRes.json();
         setCategories(categoriesData);
+        nextCategories = categoriesData;
       }
 
       if (productsRes.ok) {
         const productsData = await productsRes.json();
         setProducts(productsData);
+        nextProducts = productsData;
       }
+
+      writeStaleCache<InventoryProductsCachePayload>(INVENTORY_PRODUCTS_CACHE_KEY, {
+        categories: nextCategories,
+        products: nextProducts,
+      });
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   };
 
@@ -115,7 +149,14 @@ export default function ProductsPage() {
 
       if (res.ok) {
         // Update local state instead of fetching all data
-        setProducts((prev) => prev.filter((p) => p.id !== id));
+        setProducts((prev) => {
+          const updated = prev.filter((p) => p.id !== id);
+          writeStaleCache<InventoryProductsCachePayload>(INVENTORY_PRODUCTS_CACHE_KEY, {
+            categories,
+            products: updated,
+          });
+          return updated;
+        });
       } else {
         const error = await res.json();
         alert(error.error || 'Failed to delete product');
@@ -127,9 +168,14 @@ export default function ProductsPage() {
   };
 
   const updateProductStock = (productId: string, newStock: number) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, stock_quantity: newStock } : p))
-    );
+    setProducts((prev) => {
+      const updated = prev.map((p) => (p.id === productId ? { ...p, stock_quantity: newStock } : p));
+      writeStaleCache<InventoryProductsCachePayload>(INVENTORY_PRODUCTS_CACHE_KEY, {
+        categories,
+        products: updated,
+      });
+      return updated;
+    });
   };
 
   const handleProductSaved = (savedProduct: InventoryProduct) => {
@@ -139,10 +185,19 @@ export default function ProductsPage() {
         // Update existing product
         const updated = [...prev];
         updated[index] = savedProduct;
+        writeStaleCache<InventoryProductsCachePayload>(INVENTORY_PRODUCTS_CACHE_KEY, {
+          categories,
+          products: updated,
+        });
         return updated;
       } else {
         // Add new product
-        return [...prev, savedProduct];
+        const updated = [...prev, savedProduct];
+        writeStaleCache<InventoryProductsCachePayload>(INVENTORY_PRODUCTS_CACHE_KEY, {
+          categories,
+          products: updated,
+        });
+        return updated;
       }
     });
   };

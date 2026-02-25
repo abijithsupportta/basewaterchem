@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import type { StaffRole } from '@/lib/authz';
+import { useDashboardSessionOptional } from '@/providers/dashboard-session-provider';
 
 export interface BranchInfo {
   id: string;
@@ -11,6 +12,8 @@ export interface BranchInfo {
 }
 
 export function useBranches() {
+  const dashboardSession = useDashboardSessionOptional();
+
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [userBranch, setUserBranch] = useState<BranchInfo | null>(null);
@@ -66,30 +69,33 @@ export function useBranches() {
     fetchBranchesAndRole();
   }, []);
 
-  const getAvailableBranches = useCallback(() => {
-    // Superadmin and manager can see all branches
-    if (userRole === 'superadmin' || userRole === 'manager' || userRole === 'admin') {
-      return branches;
+  const effectiveRole = dashboardSession?.role ?? userRole;
+  const effectiveUserBranch = (dashboardSession?.userBranch as BranchInfo | null | undefined) ?? userBranch;
+  const effectiveAllBranches = useMemo(
+    () => ((dashboardSession?.branches as BranchInfo[] | undefined) ?? branches),
+    [dashboardSession?.branches, branches]
+  );
+
+  const availableBranches = useMemo(() => {
+    if (effectiveRole === 'superadmin' || effectiveRole === 'manager') {
+      return effectiveAllBranches;
     }
-    // Other staff can only see their assigned branch
-    return userBranch ? [userBranch] : [];
-  }, [branches, userBranch, userRole]);
+    return effectiveUserBranch ? [effectiveUserBranch] : [];
+  }, [effectiveRole, effectiveAllBranches, effectiveUserBranch]);
 
   const getDefaultBranch = useCallback(() => {
-    // Superadmin and manager default to "Head Office" or first branch
-    if (userRole === 'superadmin' || userRole === 'manager' || userRole === 'admin') {
-      const headOffice = branches.find((b) => b.branch_code === 'HO');
-      return headOffice || branches[0];
+    if (effectiveRole === 'superadmin' || effectiveRole === 'manager') {
+      const headOffice = effectiveAllBranches.find((b) => b.branch_code === 'HO');
+      return headOffice || effectiveAllBranches[0];
     }
-    // Other staff default to their assigned branch
-    return userBranch;
-  }, [branches, userBranch, userRole]);
+    return effectiveUserBranch;
+  }, [effectiveAllBranches, effectiveRole, effectiveUserBranch]);
 
   return {
-    branches: getAvailableBranches(),
-    userBranch,
-    userRole,
-    loading,
+    branches: availableBranches,
+    userBranch: effectiveUserBranch,
+    userRole: effectiveRole,
+    loading: dashboardSession?.loading ?? loading,
     getDefaultBranch,
   };
 }

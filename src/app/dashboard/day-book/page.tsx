@@ -18,6 +18,7 @@ const TIME_CHIPS = [
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'week', label: 'This Week' },
   { value: 'month', label: 'This Month' },
+  { value: 'all', label: 'All Time' },
   { value: 'custom', label: 'Custom' },
 ];
 
@@ -49,6 +50,15 @@ function getDateRange(period: string): { from?: string; to?: string } {
     default:
       return {};
   }
+}
+
+function isDateWithinRange(dateValue: string | null | undefined, range: { from?: string; to?: string }) {
+  if (!dateValue) return false;
+
+  const dateOnly = dateValue.split('T')[0];
+  if (range.from && dateOnly < range.from) return false;
+  if (range.to && dateOnly > range.to) return false;
+  return true;
 }
 
 export default function DayBookPage() {
@@ -107,24 +117,29 @@ export default function DayBookPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const totals = useMemo(() => {
-    const sales = invoices.reduce((sum: number, i: any) => sum + (i.total_amount || 0), 0);
+    const invoiceSales = invoices.reduce((sum: number, i: any) => sum + (i.total_amount || 0), 0);
     const collected = invoices.reduce((sum: number, i: any) => sum + (i.amount_paid || 0), 0);
     const dues = invoices.reduce((sum: number, i: any) => sum + (i.balance_due || 0), 0);
     const serviceRevenue = services
-      .filter((s: any) => s.status === 'completed')
+      .filter(
+        (s: any) =>
+          s.status === 'completed' &&
+          isDateWithinRange(s.completed_date || s.scheduled_date, dateRange)
+      )
       .reduce((sum: number, s: any) => sum + (s.total_amount || 0), 0);
     const expensesTotal = expenses.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
     const profit = collected + serviceRevenue - expensesTotal;
 
     return {
-      sales: sales + serviceRevenue,
+      invoiceSales,
+      totalSales: invoiceSales + serviceRevenue,
       serviceRevenue,
       expensesTotal,
       collected,
       dues,
       profit,
     };
-  }, [invoices, services, expenses]);
+  }, [invoices, services, expenses, dateRange]);
 
   const downloadStatement = () => {
     downloadDayBookPDF({
@@ -132,7 +147,7 @@ export default function DayBookPage() {
       from: dateRange.from,
       to: dateRange.to,
       summary: {
-        sales: totals.sales,
+        sales: totals.totalSales,
         services: services.length,
         revenue: totals.serviceRevenue,
         expenses: totals.expensesTotal,
@@ -201,8 +216,10 @@ export default function DayBookPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(totals.sales)}</p></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Invoice Sales</p><p className="font-bold">{formatCurrency(totals.invoiceSales)}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Sales</p><p className="font-bold">{formatCurrency(totals.serviceRevenue)}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(totals.totalSales)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{services.length}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Expenses</p><p className="font-bold text-red-600">{formatCurrency(totals.expensesTotal)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(totals.dues)}</p></div>
@@ -242,7 +259,7 @@ export default function DayBookPage() {
                     key: `inv-${inv.id}`,
                   })),
                   ...services.map((srv: any) => ({
-                    date: srv.scheduled_date,
+                    date: srv.completed_date || srv.scheduled_date,
                     type: 'Service',
                     reference: srv.service_number || '-',
                     description: srv.customer?.full_name || '-',

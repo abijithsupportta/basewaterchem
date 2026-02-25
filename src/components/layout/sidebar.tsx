@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { NAV_ITEMS } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUserRole } from '@/lib/use-user-role';
 
 const iconMap: Record<string, React.ComponentType<any>> = {
@@ -31,13 +31,22 @@ export function Sidebar() {
     router.replace('/login');
   };
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    // Filter by role-based permissions
-    if (item.roles && !item.roles.includes(userRole)) {
-      return false;
+  const visibleNavItems = useMemo(
+    () =>
+      NAV_ITEMS.filter((item) => {
+        if (item.roles && !item.roles.includes(userRole)) {
+          return false;
+        }
+        return true;
+      }),
+    [userRole]
+  );
+
+  useEffect(() => {
+    for (const item of visibleNavItems) {
+      router.prefetch(item.href);
     }
-    return true;
-  });
+  }, [router, visibleNavItems]);
 
   return (
     <div
@@ -75,6 +84,7 @@ export function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onMouseEnter={() => router.prefetch(item.href)}
                   className={cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     isActive

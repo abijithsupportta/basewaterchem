@@ -33,6 +33,7 @@ export default function InvoiceDetailPage() {
   const [recording, setRecording] = useState(false);
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [paymentCollectors, setPaymentCollectors] = useState<Record<string, string>>({});
   const [deleting, setDeleting] = useState(false);
   const userRole = useUserRole();
 
@@ -44,10 +45,26 @@ export default function InvoiceDetailPage() {
       supabase.from('invoice_items').select('*').eq('invoice_id', id).order('sort_order'),
       supabase.from('invoice_payments').select('*').eq('invoice_id', id).order('paid_at', { ascending: false }),
       fetch('/api/settings').then(r => r.json()),
-    ]).then(([invRes, iRes, payRes, settings]) => {
+    ]).then(async ([invRes, iRes, payRes, settings]) => {
       if (invRes.data) { setInvoice(invRes.data); setPaymentAmount(invRes.data.balance_due); }
       if (iRes.data) setItems(iRes.data);
       if (payRes.data) setPaymentHistory(payRes.data);
+      const collectorIds = Array.from(new Set((payRes.data || []).map((p: any) => p.created_by).filter(Boolean)));
+      if (collectorIds.length > 0) {
+        const { data: collectorRows } = await supabase
+          .from('staff')
+          .select('id, full_name')
+          .in('id', collectorIds);
+        if (collectorRows) {
+          const collectorMap: Record<string, string> = {};
+          collectorRows.forEach((staff) => {
+            collectorMap[staff.id] = staff.full_name || 'Unknown';
+          });
+          setPaymentCollectors(collectorMap);
+        }
+      } else {
+        setPaymentCollectors({});
+      }
       if (settings) setCompanySettings(settings);
       setLoading(false);
     });
@@ -67,14 +84,16 @@ export default function InvoiceDetailPage() {
     try {
       const supabase = createBrowserClient();
       let createdByStaffId: string | null = null;
+      let createdByStaffName: string | null = null;
       const { data: authData } = await supabase.auth.getUser();
       if (authData.user) {
         const { data: staff } = await supabase
           .from('staff')
-          .select('id')
+          .select('id, full_name')
           .eq('auth_user_id', authData.user.id)
           .maybeSingle();
         createdByStaffId = staff?.id ?? null;
+        createdByStaffName = staff?.full_name ?? null;
       }
 
       const newPaid = (invoice.amount_paid || 0) + paymentAmount;
@@ -105,6 +124,9 @@ export default function InvoiceDetailPage() {
       toast.success('Payment recorded!');
       setInvoice((inv: any) => ({ ...inv, amount_paid: newPaid, balance_due: Math.max(0, newBalance), status: newStatus }));
       if (paymentRow) setPaymentHistory((prev) => [paymentRow, ...prev]);
+      if (createdByStaffId && createdByStaffName) {
+        setPaymentCollectors((prev) => ({ ...prev, [createdByStaffId]: createdByStaffName as string }));
+      }
       setPaymentAmount(Math.max(0, newBalance));
       setPaymentReference('');
       setShowPayment(false);
@@ -198,6 +220,9 @@ export default function InvoiceDetailPage() {
             <div className="flex justify-between"><span className="text-muted-foreground">Invoice #</span><span className="font-medium">{invoice.invoice_number}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Date</span><span>{formatDate(invoice.invoice_date)}</span></div>
             {invoice.due_date && <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span>{formatDate(invoice.due_date)}</span></div>}
+            <div className="flex justify-between"><span className="text-muted-foreground">Created By</span><span>{invoice.created_by_staff_name || 'Unknown'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Created On</span><span>{invoice.created_at ? formatDate(invoice.created_at) : '-'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Last Updated</span><span>{invoice.updated_at ? formatDate(invoice.updated_at) : '-'}</span></div>
             <div className="flex justify-between border-t pt-2"><span className="text-muted-foreground">Status</span><Badge className={getStatusColor(invoice.status)}>{INVOICE_STATUS_LABELS[invoice.status as keyof typeof INVOICE_STATUS_LABELS] || invoice.status}</Badge></div>
           </CardContent>
         </Card>
@@ -290,6 +315,7 @@ export default function InvoiceDetailPage() {
                   <tr className="border-b bg-muted/40 text-left">
                     <th className="pb-2 pt-2 px-2 font-medium">Date</th>
                     <th className="pb-2 pt-2 px-2 font-medium">Method</th>
+                    <th className="pb-2 pt-2 px-2 font-medium">Collected By</th>
                     <th className="pb-2 pt-2 px-2 font-medium">Reference</th>
                     <th className="pb-2 pt-2 px-2 font-medium text-right">Amount</th>
                   </tr>
@@ -299,6 +325,7 @@ export default function InvoiceDetailPage() {
                     <tr key={p.id} className="border-b last:border-0">
                       <td className="py-2 px-2 text-muted-foreground">{formatDate(p.paid_at)}</td>
                       <td className="py-2 px-2">{(p.payment_method || '').toUpperCase()}</td>
+                      <td className="py-2 px-2 text-muted-foreground">{p.created_by ? (paymentCollectors[p.created_by] || 'Unknown') : '-'}</td>
                       <td className="py-2 px-2 text-muted-foreground">{p.payment_reference || '-'}</td>
                       <td className="py-2 px-2 text-right font-medium">{formatCurrency(p.amount)}</td>
                     </tr>

@@ -209,6 +209,9 @@ export default function ServicesPage() {
                       {(service.customer as any)?.full_name || 'Unknown Customer'} | 
                       Scheduled: {formatDate(service.scheduled_date)}
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Created by: {service.created_by_staff_name || 'Unknown'} | Completed by: {service.completed_by_staff_name || '-'}
+                    </p>
                   </div>
                   <Badge className={getStatusColor(getEffectiveServiceStatus(service.status, service.scheduled_date))}>
                     {SERVICE_STATUS_LABELS[getEffectiveServiceStatus(service.status, service.scheduled_date) as keyof typeof SERVICE_STATUS_LABELS] || service.status}

@@ -22,6 +22,12 @@ import { notifyCustomer } from '@/lib/notify-client';
 import { useUserRole } from '@/lib/use-user-role';
 import { downloadServicePDF } from '@/lib/service-pdf';
 import { InventoryProduct } from '@/types/inventory';
+import {
+  applyStockLines,
+  normalizeIntegerQuantity,
+  normalizeStockLines,
+  validateStockAvailabilityForLines,
+} from '@/lib/stock-ledger';
 
 interface CompletionItem {
   part_name: string;
@@ -37,7 +43,6 @@ export default function ServiceDetailPage() {
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
-  const [markingDone, setMarkingDone] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
@@ -70,8 +75,45 @@ export default function ServiceDetailPage() {
     setItemSourceTypes((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  useEffect(() => {
+    setItemSourceTypes((prev) => {
+      const next = [...prev];
+
+      if (next.length > items.length) {
+        next.length = items.length;
+      }
+
+      for (let i = 0; i < items.length; i++) {
+        const hasStockProduct = Boolean(items[i]?.inventory_product_id);
+        if (!next[i]) {
+          next[i] = hasStockProduct ? 'stock' : 'manual';
+        } else if (hasStockProduct && next[i] !== 'stock') {
+          next[i] = 'stock';
+        }
+      }
+
+      return next;
+    });
+  }, [items]);
+
   const updateItem = useCallback((index: number, field: keyof CompletionItem, value: string | number) => {
-    setItems((prev) => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+
+        if (field === 'qty') {
+          const numericValue = Number(value);
+          return { ...item, qty: Number.isFinite(numericValue) ? numericValue : 0 };
+        }
+
+        if (field === 'unit_price') {
+          const numericValue = Number(value);
+          return { ...item, unit_price: Number.isFinite(numericValue) ? numericValue : 0 };
+        }
+
+        return { ...item, [field]: value };
+      })
+    );
   }, []);
 
   const handleSourceTypeChange = (index: number, type: 'manual' | 'stock') => {
@@ -163,124 +205,33 @@ export default function ServiceDetailPage() {
     setService((s: any) => ({ ...s, status: 'in_progress' }));
   };
 
-  // Mark AMC service as already done (service was done separately) and schedule next
-  const handleMarkAsDone = async () => {
-    if (!confirm('Mark this AMC service as already done? The next AMC service will be scheduled from today + cycle period.')) return;
-    setMarkingDone(true);
-    try {
-      const supabase = createBrowserClient();
-      const now = new Date();
-      const completedDateStr = now.toISOString();
-
-      // Mark current service as completed
-      await supabase.from('services').update({
-        status: 'completed',
-        completed_date: completedDateStr,
-        work_done: 'Service already completed (marked as done)',
-      }).eq('id', id);
-
-      // Schedule next AMC service if this is an AMC service
-      if (service.amc_contract_id) {
-        const { data: amcData } = await supabase.from('amc_contracts')
-          .select('*')
-          .eq('id', service.amc_contract_id)
-          .single();
-
-        if (amcData && amcData.status === 'active') {
-          const { data: existingServices } = await supabase.from('services')
-            .select('id')
-            .eq('amc_contract_id', service.amc_contract_id)
-            .in('status', ['scheduled', 'assigned'])
-            .neq('id', id);
-
-          if (!existingServices || existingServices.length === 0) {
-            const intervalMonths = amcData.service_interval_months || 3;
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const nextDate = new Date(today);
-            nextDate.setMonth(nextDate.getMonth() + intervalMonths);
-            const nextDateStr = nextDate.toISOString().split('T')[0];
-            const freeValidUntil = amcData.start_date ? new Date(amcData.start_date) : null;
-            if (freeValidUntil) {
-              freeValidUntil.setDate(freeValidUntil.getDate() + 365);
-            }
-
-            await supabase.from('amc_contracts').update({
-              services_completed: (amcData.services_completed || 0) + 1,
-              next_service_date: nextDateStr,
-              end_date: nextDateStr,
-            }).eq('id', service.amc_contract_id);
-
-            await supabase.from('services').insert({
-              customer_id: service.customer_id,
-              amc_contract_id: service.amc_contract_id,
-              service_type: 'amc_service',
-              status: 'scheduled',
-              scheduled_date: nextDateStr,
-              description: `AMC service - ${amcData.contract_number || 'Recurring'}`,
-              is_under_amc: true,
-              payment_status: 'not_applicable',
-              free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
-            });
-
-            toast.success(`Marked as done! Next service scheduled for ${nextDateStr}`);
-            // Notify: next service scheduled
-            const cust = service.customer as any;
-            if (cust?.email) {
-              notifyCustomer('service_scheduled', {
-                customerEmail: cust.email,
-                customerName: cust.full_name,
-                serviceNumber: `Next Service`,
-                serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
-                scheduledDate: nextDateStr,
-                description: `Recurring service - ${amcData.contract_number || 'Scheduled'}`,
-              });
-            }
-          } else {
-            await supabase.from('amc_contracts').update({
-              services_completed: (amcData.services_completed || 0) + 1,
-            }).eq('id', service.amc_contract_id);
-            toast.success('Marked as done!');
-          }
-        } else {
-          toast.success('Marked as done!');
-        }
-      } else {
-        toast.success('Marked as done!');
-      }
-
-      // Notify: service completed
-      const custDone = service.customer as any;
-      if (custDone?.email) {
-        notifyCustomer('service_completed', {
-          customerEmail: custDone.email,
-          customerName: custDone.full_name,
-          serviceNumber: service.service_number || `SRV-${id?.toString().slice(0, 8)}`,
-          serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
-          completedDate: completedDateStr,
-          workDone: 'Service already completed (marked as done)',
-        });
-      }
-
-      setService((s: any) => ({ ...s, status: 'completed', completed_date: completedDateStr, work_done: 'Service already completed (marked as done)' }));
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to mark as done');
-    } finally {
-      setMarkingDone(false);
-    }
-  };
-
   const handleCompleteService = async () => {
     setCompleting(true);
     try {
       const supabase = createBrowserClient();
-      const partsUsed = items.filter((i) => i.part_name.trim()).map((i) => ({
-        part_name: i.part_name.trim(),
-        qty: i.qty,
-        cost: i.qty * i.unit_price,
-        unit_price: i.unit_price,
-        inventory_product_id: i.inventory_product_id || null,
+      const normalizedItems = items.map((item) => ({
+        ...item,
+        qty: normalizeIntegerQuantity(item.qty),
+        unit_price: Math.max(0, Number(item.unit_price) || 0),
       }));
+
+      const partsUsed = normalizedItems
+        .filter((i) => i.part_name.trim() && i.qty > 0)
+        .map((i) => ({
+          part_name: i.part_name.trim(),
+          qty: i.qty,
+          cost: i.qty * i.unit_price,
+          unit_price: i.unit_price,
+          inventory_product_id: i.inventory_product_id || null,
+        }));
+
+      const stockLines = normalizeStockLines(
+        normalizedItems.map((item) => ({
+          productId: item.inventory_product_id,
+          quantity: item.qty,
+          label: item.part_name,
+        }))
+      );
 
       // Get staff details for tracking (parallel with service update preparation)
       const staffPromise = (async () => {
@@ -318,6 +269,18 @@ export default function ServiceDetailPage() {
       // Wait for staff data
       const { completedByStaffId, completedByStaffName } = await staffPromise;
 
+      if (stockLines.length > 0) {
+        await validateStockAvailabilityForLines(supabase, stockLines);
+        await applyStockLines(supabase, {
+          lines: stockLines,
+          transactionType: 'service',
+          referenceType: 'service',
+          referenceId: id,
+          referenceLabel: `Used in Service ${service.service_number || id}`,
+          createdBy: completedByStaffId,
+        });
+      }
+
       const updateData: any = {
         status: 'completed',
         completed_date: new Date().toISOString(),
@@ -337,28 +300,8 @@ export default function ServiceDetailPage() {
       const { error } = await supabase.from('services').update(updateData).eq('id', id);
       if (error) throw error;
 
-      // Parallelize all non-blocking operations
+      // Parallelize non-critical post-completion operations
       const backgroundOps = [];
-
-      // 1. Deduct stock in parallel for all items
-      const stockPromises = items
-        .filter((item) => item.inventory_product_id && item.qty > 0)
-        .map((item) =>
-          Promise.resolve(
-            supabase.rpc('log_stock_transaction', {
-              p_product_id: item.inventory_product_id,
-              p_transaction_type: 'service',
-              p_quantity: -item.qty,
-              p_reference_type: 'service',
-              p_reference_id: id,
-              p_notes: `Used in Service ${service.service_number || id}`,
-              p_created_by: completedByStaffId,
-            })
-          ).catch((err: any) => {
-            console.error('Error deducting stock:', err);
-            toast.error(`Warning: Stock not deducted for ${item.part_name}`);
-          })
-        );
 
       // 2. Handle AMC scheduling in background
       const amcOp = (async () => {
@@ -421,7 +364,7 @@ export default function ServiceDetailPage() {
         }
       })();
 
-      backgroundOps.push(...stockPromises, amcOp);
+      backgroundOps.push(amcOp);
 
       // 3. Send completion notification in background (don't await)
       const custComplete = service.customer as any;
@@ -559,12 +502,6 @@ export default function ServiceDetailPage() {
             </Button>
           )}
           {service.status === 'scheduled' && <Button variant="outline" onClick={handleStartService}>Start Service</Button>}
-          {service.status === 'scheduled' && service.service_type === 'amc_service' && (
-            <Button variant="secondary" onClick={handleMarkAsDone} disabled={markingDone}>
-              {markingDone ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-              Already Done
-            </Button>
-          )}
           {(service.status === 'in_progress' || service.status === 'assigned') && <Button onClick={() => setShowCompleteForm(true)}><CheckCircle className="mr-2 h-4 w-4" /> Complete</Button>}
         </div>
       </div>
@@ -618,6 +555,32 @@ export default function ServiceDetailPage() {
           )}
           <div className="mt-3">
             <Badge className={getStatusColor(service.payment_status)}>{PAYMENT_STATUS_LABELS[service.payment_status as keyof typeof PAYMENT_STATUS_LABELS] || service.payment_status}</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Service Record</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Created By</span>
+            <span className="font-medium">{service.created_by_staff_name || 'Unknown'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Created On</span>
+            <span>{service.created_at ? formatDate(service.created_at) : '-'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Completed By</span>
+            <span className="font-medium">{service.completed_by_staff_name || '-'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Completed On</span>
+            <span>{service.completed_date ? formatDate(service.completed_date) : '-'}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="text-muted-foreground">Last Updated</span>
+            <span>{service.updated_at ? formatDate(service.updated_at) : '-'}</span>
           </div>
         </CardContent>
       </Card>
@@ -681,12 +644,20 @@ export default function ServiceDetailPage() {
                 <div className="space-y-3">
                   {items.map((item, index) => (
                     <div key={index} className="rounded-lg border p-3 bg-muted/30 space-y-2">
+                      {(() => {
+                        const sourceType: 'manual' | 'stock' =
+                          itemSourceTypes[index] === 'stock' || Boolean(item.inventory_product_id)
+                            ? 'stock'
+                            : 'manual';
+
+                        return (
+                          <>
                       {/* Source Type Toggle */}
                       <div className="flex items-center gap-4 mb-2">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="radio"
-                            checked={itemSourceTypes[index] === 'manual'}
+                            checked={sourceType === 'manual'}
                             onChange={() => handleSourceTypeChange(index, 'manual')}
                             className="h-4 w-4"
                           />
@@ -695,7 +666,7 @@ export default function ServiceDetailPage() {
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="radio"
-                            checked={itemSourceTypes[index] === 'stock'}
+                            checked={sourceType === 'stock'}
                             onChange={() => handleSourceTypeChange(index, 'stock')}
                             className="h-4 w-4"
                           />
@@ -703,10 +674,13 @@ export default function ServiceDetailPage() {
                             <Package className="h-4 w-4" /> From Stock
                           </span>
                         </label>
+                        <Badge variant="outline" className="ml-auto h-5 px-2 text-[10px] leading-none">
+                          {sourceType === 'stock' ? 'Stock' : 'Manual'}
+                        </Badge>
                       </div>
 
                       <div className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
-                        {itemSourceTypes[index] === 'stock' ? (
+                        {sourceType === 'stock' ? (
                           <SearchableSelect
                             options={inventoryProducts.map((product) => ({
                               value: product.id,
@@ -728,7 +702,7 @@ export default function ServiceDetailPage() {
                           type="number"
                           min={1}
                           max={
-                            itemSourceTypes[index] === 'stock' && item.inventory_product_id
+                            sourceType === 'stock' && item.inventory_product_id
                               ? inventoryProducts.find(p => p.id === item.inventory_product_id)?.stock_quantity
                               : undefined
                           }
@@ -749,6 +723,9 @@ export default function ServiceDetailPage() {
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const user = (await supabase.auth.getUser()).data.user;
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
     if (!canCreateOrEdit(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create invoices.' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager/staff can create invoices.' }, { status: 403 });
     }
 
     // Get staff details for tracking

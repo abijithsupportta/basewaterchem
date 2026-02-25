@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
 
     if (!canCreateOrEdit(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only admin/manager/staff can create expenses.' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager/staff can create expenses.' }, { status: 403 });
     }
 
     const body = await request.json();

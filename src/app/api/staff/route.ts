@@ -4,7 +4,7 @@ import { emailService } from '@/domain/services';
 import { canDelete, canManageStaff, type StaffRole } from '@/lib/authz';
 import { apiSuccess, apiError } from '@/core/api';
 
-// Only allow adding these roles (no admin or superadmin)
+// Only allow adding these roles (no superadmin)
 const ALLOWED_STAFF_ROLES: StaffRole[] = ['manager', 'staff', 'technician'];
 
 async function getCurrentUserRole() {
@@ -14,12 +14,6 @@ async function getCurrentUserRole() {
     if (userError || !userData.user) {
       console.log('[Staff API] No user found:', userError?.message);
       return { supabase, role: null as StaffRole | null, userId: null as string | null };
-    }
-
-    const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
-    if (metadataRole) {
-      console.log('[Staff API] Using metadata role:', metadataRole);
-      return { supabase, role: metadataRole, userId: userData.user.id };
     }
 
     const { data: staff, error: staffError } = await supabase
@@ -33,13 +27,19 @@ async function getCurrentUserRole() {
       return { supabase, role: null as StaffRole | null, userId: userData.user.id };
     }
 
-    if (!staff?.role) {
-      console.log('[Staff API] No staff record found for user:', userData.user.id);
-      return { supabase, role: null as StaffRole | null, userId: userData.user.id };
+    if (staff?.role) {
+      console.log('[Staff API] Using staff table role:', staff.role);
+      return { supabase, role: staff.role as StaffRole, userId: userData.user.id };
     }
 
-    console.log('[Staff API] User role:', staff.role);
-    return { supabase, role: staff.role as StaffRole, userId: userData.user.id };
+    const metadataRole = userData.user.user_metadata?.role as StaffRole | undefined;
+    if (metadataRole) {
+      console.log('[Staff API] Using metadata role fallback:', metadataRole);
+      return { supabase, role: metadataRole, userId: userData.user.id };
+    }
+
+    console.log('[Staff API] No role found for user:', userData.user.id);
+    return { supabase, role: null as StaffRole | null, userId: userData.user.id };
   } catch (error) {
     console.error('[Staff API] Unexpected error in getCurrentUserRole:', error);
     throw error;
@@ -73,7 +73,7 @@ export async function GET() {
     if (!role || !canManageStaff(role)) {
       console.log('[Staff API GET] Access denied for role:', role);
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only Admin or Manager can view staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only superadmin can view staff.' } },
         { status: 403 }
       );
     }
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     const { role } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can add staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin can add staff.' } },
         { status: 403 }
       );
     }
@@ -296,7 +296,7 @@ export async function PATCH(request: NextRequest) {
     const { role, userId } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can update staff status.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin can update staff status.' } },
         { status: 403 }
       );
     }
@@ -362,7 +362,7 @@ export async function DELETE(request: NextRequest) {
     const { role, userId } = await getCurrentUserRole();
     if (!role || !canDelete(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only admin can delete staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin can delete staff.' } },
         { status: 403 }
       );
     }
