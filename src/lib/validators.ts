@@ -1,13 +1,27 @@
 import { z } from 'zod';
 
+const normalizeIndianPhone = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value;
+  const digitsOnly = value.replace(/\D/g, '');
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    return digitsOnly.slice(2);
+  }
+  return digitsOnly;
+};
+
+const phoneSchema = z.preprocess(
+  normalizeIndianPhone,
+  z.string().regex(/^\d{10}$/, 'Phone number must be exactly 10 digits')
+);
+
 export const customerSchema = z.object({
   branch_id: z.string().uuid('Select a branch'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().regex(/^\d{10}$/, 'Phone number must be exactly 10 digits'),
-  alt_phone: z.string().optional().refine((value) => {
-    if (!value) return true;
-    return /^\d{10}$/.test(value);
-  }, 'Alt phone must be exactly 10 digits'),
+  phone: phoneSchema,
+  alt_phone: z.preprocess(
+    normalizeIndianPhone,
+    z.union([z.string().regex(/^\d{10}$/, 'Alt phone must be exactly 10 digits'), z.literal('')])
+  ).optional(),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   address_line1: z.string().min(5, 'Address is required'),
   address_line2: z.string().optional(),

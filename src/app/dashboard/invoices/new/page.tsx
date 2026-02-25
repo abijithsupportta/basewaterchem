@@ -260,7 +260,7 @@ function NewInvoiceContent() {
         if (amcError) throw amcError;
 
         // Create scheduled AMC service at first service date
-        const { error: srvError } = await supabase.from('services').insert({
+        const { data: createdService, error: srvError } = await supabase.from('services').insert({
           customer_id: invoiceData.customer_id,
           amc_contract_id: amcContract.id,
           service_type: 'amc_service',
@@ -270,16 +270,18 @@ function NewInvoiceContent() {
           is_under_amc: true,
           payment_status: 'not_applicable',
           free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
-        });
+        }).select('id, service_number').single();
         if (srvError) throw srvError;
 
         // Notify customer about scheduled recurring service
         const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
-        if (selectedCust?.email) {
+        if (selectedCust?.email || selectedCust?.phone) {
           notifyCustomer('service_scheduled', {
+            serviceId: createdService?.id,
             customerEmail: selectedCust.email,
+            customerPhone: selectedCust.phone,
             customerName: selectedCust.full_name,
-            serviceNumber: invoice.invoice_number || 'New Service',
+            serviceNumber: createdService?.service_number || invoice.invoice_number || 'New Service',
             serviceType: 'Recurring Service',
             scheduledDate: firstServiceDate.toISOString().split('T')[0],
             description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,

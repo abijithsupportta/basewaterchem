@@ -113,7 +113,7 @@ export default function DayBookPage() {
 
     let expQuery = supabase
       .from('expenses')
-      .select('id, expense_date, title, category, amount, payment_method, description')
+      .select('id, expense_date, title, category, amount, payment_method, reference_no, description')
       .order('expense_date', { ascending: false });
 
     if (dateRange.from) {
@@ -174,6 +174,23 @@ export default function DayBookPage() {
     });
   };
 
+  const sortExpenses = (list: any[]) =>
+    [...list].sort((a, b) => new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime());
+
+  const expenseInCurrentRange = (expenseDate: string) => isDateWithinRange(expenseDate, dateRange);
+
+  const upsertExpense = (expense: any) => {
+    setExpenses((prev) => {
+      const withoutCurrent = prev.filter((item) => item.id !== expense.id);
+
+      if (!expenseInCurrentRange(expense.expense_date)) {
+        return sortExpenses(withoutCurrent);
+      }
+
+      return sortExpenses([expense, ...withoutCurrent]);
+    });
+  };
+
   const saveExpense = async () => {
     if (!canManageExpenses) {
       toast.error('You do not have permission to manage expenses');
@@ -209,9 +226,13 @@ export default function DayBookPage() {
         throw new Error(payload?.error?.message || payload?.error || 'Failed to save expense');
       }
 
+      const savedExpense = payload?.data;
+      if (savedExpense?.id) {
+        upsertExpense(savedExpense);
+      }
+
       toast.success(editingExpenseId ? 'Expense updated' : 'Expense added');
       resetExpenseForm();
-      await fetchData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save expense');
     } finally {
@@ -245,7 +266,7 @@ export default function DayBookPage() {
         throw new Error(payload?.error?.message || payload?.error || 'Failed to delete expense');
       }
       toast.success('Expense deleted');
-      await fetchData();
+      setExpenses((prev) => prev.filter((expense) => expense.id !== id));
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete expense');
     }

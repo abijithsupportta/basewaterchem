@@ -24,6 +24,8 @@ interface CompanySettings {
   bank_name: string;
   bank_account: string;
   bank_ifsc: string;
+  reminder_days_ahead: number;
+  reminder_send_time: string;
 }
 
 const DEFAULT_SETTINGS: CompanySettings = {
@@ -40,6 +42,8 @@ const DEFAULT_SETTINGS: CompanySettings = {
   bank_name: '',
   bank_account: '',
   bank_ifsc: '',
+  reminder_days_ahead: 4,
+  reminder_send_time: '10:00',
 };
 
 export default function SettingsPage() {
@@ -78,7 +82,10 @@ export default function SettingsPage() {
   };
 
   const update = (field: keyof CompanySettings, value: string) => {
-    setSettings((s) => ({ ...s, [field]: value }));
+    setSettings((s) => ({
+      ...s,
+      [field]: field === 'reminder_days_ahead' ? Number(value || 0) : value,
+    }));
   };
 
   if (loading) return <Loading />;
@@ -175,6 +182,35 @@ export default function SettingsPage() {
                 <Input value={settings.bank_ifsc} onChange={(e) => update('bank_ifsc', e.target.value)} placeholder="SBIN0001234" />
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader><CardTitle className="text-base">WhatsApp Reminder Settings</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Reminder Time</Label>
+                <Input
+                  type="time"
+                  value={settings.reminder_send_time}
+                  onChange={(e) => update('reminder_send_time', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Days Ahead</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={settings.reminder_days_ahead}
+                  onChange={(e) => update('reminder_days_ahead', e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Default reminder configuration is 10:00 AM for services scheduled 4 days ahead.
+            </p>
           </CardContent>
         </Card>
       </div>

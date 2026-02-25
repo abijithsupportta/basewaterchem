@@ -37,6 +37,13 @@ type DashboardCachePayload = {
 };
 
 const DASHBOARD_CACHE_TTL_MS = 600000;
+const WHATSAPP_COST_PER_MESSAGE = 0.8;
+
+const MESSAGE_TIME_CHIPS = [
+  { value: 'all', label: 'All Time' },
+  { value: 'month', label: 'Monthly' },
+  { value: 'custom', label: 'Custom' },
+];
 
 function DashboardContentSkeleton() {
   return (
@@ -124,6 +131,12 @@ export default function DashboardPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [staffId, setStaffId] = useState<string | null>(null);
+  const [messageFilter, setMessageFilter] = useState('all');
+  const [messageCustomFrom, setMessageCustomFrom] = useState('');
+  const [messageCustomTo, setMessageCustomTo] = useState('');
+  const [whatsAppMessageCount, setWhatsAppMessageCount] = useState(0);
+  const [whatsAppMessageCost, setWhatsAppMessageCost] = useState(0);
+  const [messageStatsLoading, setMessageStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
 
   // Redirect staff away from dashboard
@@ -214,15 +227,14 @@ export default function DashboardPage() {
       return;
     }
 
-    // Build services query - filtered by date range on scheduled_date AND branch
+    // Build services query by branch; date filtering is applied client-side using
+    // effective service date (completed_date fallback scheduled_date)
     let srvQuery = supabase
       .from('services')
       .select('*, customer:customers(id, full_name, phone, customer_code, city)')
       .order('scheduled_date', { ascending: false });
 
     if (selectedBranchId && selectedBranchId !== 'all') srvQuery = srvQuery.eq('branch_id', selectedBranchId);
-    if (dateRange.from) srvQuery = srvQuery.gte('scheduled_date', dateRange.from);
-    if (dateRange.to) srvQuery = srvQuery.lte('scheduled_date', dateRange.to);
 
     // Pending services: past scheduled date, not completed/cancelled
     let pendingQuery = supabase
@@ -278,14 +290,23 @@ export default function DashboardPage() {
       expenseQuery,
     ]);
 
-    setServices(srvRes.data || []);
+    const allServices = srvRes.data || [];
+    const servicesInRange = allServices.filter((service: any) => {
+      const dateValue = (service.completed_date || service.scheduled_date || '').toString().slice(0, 10);
+      if (!dateValue) return false;
+      if (dateRange.from && dateValue < dateRange.from) return false;
+      if (dateRange.to && dateValue > dateRange.to) return false;
+      return true;
+    });
+
+    setServices(servicesInRange);
     setPendingServices(pendRes.data || []);
     setTotalCustomers(custRes.count || 0);
     setPendingPayments(invCountRes.count || 0);
     setInvoices(invDataRes.data || []);
     setExpenses(expRes.data || []);
     const nextPayload: DashboardCachePayload = {
-      services: srvRes.data || [],
+      services: servicesInRange,
       pendingServices: pendRes.data || [],
       totalCustomers: custRes.count || 0,
       pendingPayments: invCountRes.count || 0,
@@ -312,6 +333,63 @@ export default function DashboardPage() {
 
     void fetchData(Boolean(cached));
   }, [fetchData, applyDashboardData, dashboardCacheKey, roleLoading]);
+
+  useEffect(() => {
+    if (roleLoading) return;
+    if (userRole === 'technician') {
+      setWhatsAppMessageCount(0);
+      setWhatsAppMessageCost(0);
+      setMessageStatsLoading(false);
+      return;
+    }
+
+    const fetchMessageStats = async () => {
+      setMessageStatsLoading(true);
+      const supabase = createBrowserClient();
+
+      let scheduledQuery = supabase
+        .from('services')
+        .select('id', { count: 'exact', head: true })
+        .eq('whatsapp_scheduled_status', 'sent');
+
+      let reminderQuery = supabase
+        .from('services')
+        .select('id', { count: 'exact', head: true })
+        .eq('whatsapp_reminder_status', 'sent');
+
+      if (selectedBranchId && selectedBranchId !== 'all') {
+        scheduledQuery = scheduledQuery.eq('branch_id', selectedBranchId);
+        reminderQuery = reminderQuery.eq('branch_id', selectedBranchId);
+      }
+
+      if (messageFilter === 'month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+        scheduledQuery = scheduledQuery.gte('whatsapp_scheduled_sent_at', start).lte('whatsapp_scheduled_sent_at', end);
+        reminderQuery = reminderQuery.gte('whatsapp_reminder_sent_at', start).lte('whatsapp_reminder_sent_at', end);
+      } else if (messageFilter === 'custom') {
+        if (messageCustomFrom) {
+          const start = new Date(`${messageCustomFrom}T00:00:00.000Z`).toISOString();
+          scheduledQuery = scheduledQuery.gte('whatsapp_scheduled_sent_at', start);
+          reminderQuery = reminderQuery.gte('whatsapp_reminder_sent_at', start);
+        }
+        if (messageCustomTo) {
+          const end = new Date(`${messageCustomTo}T23:59:59.999Z`).toISOString();
+          scheduledQuery = scheduledQuery.lte('whatsapp_scheduled_sent_at', end);
+          reminderQuery = reminderQuery.lte('whatsapp_reminder_sent_at', end);
+        }
+      }
+
+      const [scheduledRes, reminderRes] = await Promise.all([scheduledQuery, reminderQuery]);
+      const totalMessages = (scheduledRes.count || 0) + (reminderRes.count || 0);
+      setWhatsAppMessageCount(totalMessages);
+      setWhatsAppMessageCost(totalMessages * WHATSAPP_COST_PER_MESSAGE);
+      setMessageStatsLoading(false);
+    };
+
+    void fetchMessageStats();
+  }, [messageFilter, messageCustomFrom, messageCustomTo, selectedBranchId, userRole, roleLoading]);
 
   // Compute stats from filtered services
   const stats = useMemo(() => {
@@ -812,6 +890,56 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Smartphone className="h-5 w-5 text-purple-600" />
+            WhatsApp Message Summary
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            {MESSAGE_TIME_CHIPS.map((chip) => (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => setMessageFilter(chip.value)}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                  messageFilter === chip.value
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background text-muted-foreground border-border hover:bg-accent hover:text-accent-foreground'
+                )}
+              >
+                {chip.label}
+              </button>
+            ))}
+            {messageFilter === 'custom' && (
+              <DateRangePicker
+                from={messageCustomFrom}
+                to={messageCustomTo}
+                onChange={(from, to) => {
+                  setMessageCustomFrom(from);
+                  setMessageCustomTo(to);
+                }}
+              />
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border p-4">
+              <p className="text-xs text-muted-foreground">Total Messages Sent</p>
+              <p className="text-2xl font-bold">{messageStatsLoading ? '...' : whatsAppMessageCount}</p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="text-xs text-muted-foreground">Estimated Cost (₹0.8 × count)</p>
+              <p className="text-2xl font-bold text-purple-700">
+                {messageStatsLoading ? '...' : formatCurrency(whatsAppMessageCost)}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Pending / Overdue Services */}
       {pendingServices.length > 0 && (

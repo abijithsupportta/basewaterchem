@@ -4,6 +4,7 @@ import { ServiceRepository } from '@/infrastructure/repositories';
 import { UnauthorizedError } from '@/core/errors';
 import { apiSuccess, apiError } from '@/core/api';
 import { sendBatchReminders } from '@/lib/email';
+import { getReminderConfig, shouldRunReminderNow, sendReminderWhatsAppBatch } from '@/lib/whatsapp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +25,37 @@ export async function POST(request: NextRequest) {
     const emailResults = await sendBatchReminders(supabase);
     console.log('[Cron] Email reminders sent:', emailResults);
 
+    const reminderConfig = await getReminderConfig(supabase);
+    const runDecision = shouldRunReminderNow(reminderConfig);
+
+    let whatsappResults: any = {
+      attempted: false,
+      reason: 'outside configured reminder time',
+      config: reminderConfig,
+    };
+
+    if (runDecision.shouldRun) {
+      const batchResult = await sendReminderWhatsAppBatch(supabase, reminderConfig.daysAhead);
+      whatsappResults = {
+        attempted: true,
+        ...batchResult,
+        config: reminderConfig,
+      };
+
+      const { data: settingsRow } = await supabase
+        .from('company_settings')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+
+      if (settingsRow?.id) {
+        await supabase
+          .from('company_settings')
+          .update({ last_whatsapp_reminder_run_on: runDecision.todayIst })
+          .eq('id', settingsRow.id);
+      }
+    }
+
     const upcomingServices = await serviceRepo.findUpcoming(100);
     const overdueServices = await serviceRepo.findOverdue(100);
 
@@ -31,6 +63,7 @@ export async function POST(request: NextRequest) {
       upcoming: upcomingServices.length,
       overdue: overdueServices.length,
       emailReminders: emailResults,
+      whatsappReminders: whatsappResults,
     });
   } catch (error) {
     return apiError(error);

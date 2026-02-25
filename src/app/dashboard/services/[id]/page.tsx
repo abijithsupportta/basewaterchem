@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, Calendar, Clock, Download, Loader2, Plus, Trash2, Package } from 'lucide-react';
@@ -68,6 +68,29 @@ export default function ServiceDetailPage() {
   const partsCost = items.reduce((sum, item) => sum + item.qty * item.unit_price, 0);
   const taxAmount = applyTax ? ((partsCost + serviceCharge - discount) * taxPercent) / 100 : 0;
   const totalAmount = partsCost + serviceCharge + taxAmount - discount;
+  const stockQuantityById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const product of inventoryProducts) {
+      map.set(product.id, Math.max(0, Number(product.stock_quantity) || 0));
+    }
+    return map;
+  }, [inventoryProducts]);
+
+  const stockValidationErrors = useMemo(() => {
+    const errors: string[] = [];
+    items.forEach((item, index) => {
+      if (!item.inventory_product_id) return;
+      const availableStock = stockQuantityById.get(item.inventory_product_id);
+      if (availableStock === undefined) return;
+      const requestedQty = normalizeIntegerQuantity(item.qty);
+      if (requestedQty > availableStock) {
+        errors[index] = `Qty exceeds stock (${availableStock} available)`;
+      }
+    });
+    return errors;
+  }, [items, stockQuantityById]);
+
+  const hasStockValidationErrors = stockValidationErrors.some(Boolean);
 
   const addItem = useCallback(() => {
     setItems((prev) => [...prev, { part_name: '', qty: 1, unit_price: 0, inventory_product_id: null }]);
@@ -210,6 +233,11 @@ export default function ServiceDetailPage() {
   };
 
   const handleCompleteService = async () => {
+    if (hasStockValidationErrors) {
+      toast.error('Please fix stock quantity errors before marking service complete.');
+      return;
+    }
+
     setCompleting(true);
     try {
       const supabase = createBrowserClient();
@@ -329,7 +357,7 @@ export default function ServiceDetailPage() {
             }
 
             // Parallelize AMC update and service creation
-            await Promise.all([
+            const [{ error: amcUpdateError }, { data: createdNextService, error: serviceInsertError }] = await Promise.all([
               supabase.from('amc_contracts').update({
                 services_completed: (amcContract.services_completed || 0) + 1,
                 next_service_date: nextDateStr,
@@ -345,16 +373,25 @@ export default function ServiceDetailPage() {
                 is_under_amc: true,
                 payment_status: 'not_applicable',
                 free_service_valid_until: freeValidUntil ? freeValidUntil.toISOString().split('T')[0] : null,
-              }),
+              }).select('id, service_number').single(),
             ]);
+
+            if (amcUpdateError) {
+              throw amcUpdateError;
+            }
+            if (serviceInsertError) {
+              throw serviceInsertError;
+            }
 
             // Notify in background
             const custNext = service.customer as any;
-            if (custNext?.email) {
+            if (custNext?.email || custNext?.phone) {
               notifyCustomer('service_scheduled', {
+                serviceId: createdNextService?.id,
                 customerEmail: custNext.email,
+                customerPhone: custNext.phone,
                 customerName: custNext.full_name,
-                serviceNumber: `Next Service`,
+                serviceNumber: createdNextService?.service_number || 'Next Service',
                 serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
                 scheduledDate: nextDateStr,
                 description: `Recurring service - ${amcContract.contract_number || 'Scheduled'}`,
@@ -414,6 +451,7 @@ export default function ServiceDetailPage() {
         .update({
           scheduled_date: rescheduleDate,
           scheduled_time_slot: rescheduleTimeSlot || null,
+          whatsapp_reminder_sent_for_date: null,
         })
         .eq('id', id);
       if (error) throw error;
@@ -423,6 +461,18 @@ export default function ServiceDetailPage() {
         scheduled_time_slot: rescheduleTimeSlot || null,
       }));
       toast.success('Service rescheduled');
+      if (customer?.email || customer?.phone) {
+        notifyCustomer('service_scheduled', {
+          serviceId: id,
+          customerEmail: customer?.email,
+          customerPhone: customer?.phone,
+          customerName: customer?.full_name,
+          serviceNumber: service.service_number || `SRV-${id?.toString().slice(0, 8)}`,
+          serviceType: SERVICE_TYPE_LABELS[service.service_type as keyof typeof SERVICE_TYPE_LABELS] || 'Service',
+          scheduledDate: rescheduleDate,
+          description: service.description || '',
+        }).catch(console.error);
+      }
       setShowReschedule(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to reschedule');
@@ -595,6 +645,38 @@ export default function ServiceDetailPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader><CardTitle className="text-base">WhatsApp Notifications</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Scheduled Message</span>
+            <span className="font-medium capitalize">{service.whatsapp_scheduled_status || 'pending'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Scheduled Sent At</span>
+            <span>{service.whatsapp_scheduled_sent_at ? formatDate(service.whatsapp_scheduled_sent_at) : '-'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Reminder Message</span>
+            <span className="font-medium capitalize">{service.whatsapp_reminder_status || 'pending'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Reminder Sent At</span>
+            <span>{service.whatsapp_reminder_sent_at ? formatDate(service.whatsapp_reminder_sent_at) : '-'}</span>
+          </div>
+          {service.whatsapp_scheduled_error && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              Scheduled send error: {service.whatsapp_scheduled_error}
+            </div>
+          )}
+          {service.whatsapp_reminder_error && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+              Reminder send error: {service.whatsapp_reminder_error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Parts Used */}
       {service.parts_used && Array.isArray(service.parts_used) && service.parts_used.length > 0 && (
         <Card>
@@ -720,6 +802,9 @@ export default function ServiceDetailPage() {
                           onChange={(e) => updateItem(index, 'qty', Number(e.target.value))}
                           className="text-center"
                         />
+                        {stockValidationErrors[index] && (
+                          <p className="text-xs text-red-500 col-start-2 col-span-2">{stockValidationErrors[index]}</p>
+                        )}
                         <Input
                           type="number"
                           min={0}
@@ -781,7 +866,7 @@ export default function ServiceDetailPage() {
             </div>
 
             <div className="flex gap-4 pt-4 border-t">
-              <Button onClick={handleCompleteService} disabled={completing || !workDone.trim()}>
+              <Button onClick={handleCompleteService} disabled={completing || !workDone.trim() || hasStockValidationErrors}>
                 {completing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Mark Complete
               </Button>

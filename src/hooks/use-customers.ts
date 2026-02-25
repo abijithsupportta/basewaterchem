@@ -53,12 +53,30 @@ export function useCustomers(
   const getCustomer = useCallback((id: string) => repo.findById(id), [repo]);
 
   const createCustomer = useCallback(async (formData: CustomerFormData) => {
-    // Include the selected branch if not explicitly provided
-    const dataWithBranch = {
-      ...formData,
-      branch_id: formData.branch_id || selectedBranchId,
+    const normalizePhone = (value?: string) => {
+      if (!value) return value;
+      const digitsOnly = value.replace(/\D/g, '');
+      if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+        return digitsOnly.slice(2);
+      }
+      return digitsOnly;
     };
-    const data = await repo.create(dataWithBranch);
+
+    const resolvedBranchId =
+      formData.branch_id && formData.branch_id !== 'all'
+        ? formData.branch_id
+        : selectedBranchId !== 'all'
+          ? selectedBranchId
+          : undefined;
+
+    const dataWithBranchAndNormalizedPhone: CustomerFormData = {
+      ...formData,
+      phone: normalizePhone(formData.phone) || '',
+      alt_phone: normalizePhone(formData.alt_phone),
+      ...(resolvedBranchId ? { branch_id: resolvedBranchId } : {}),
+    };
+
+    const data = await repo.create(dataWithBranchAndNormalizedPhone);
     // Add to local state immediately instead of refetching all
     setCustomers((prev) => [data as Customer, ...prev]);
     return data;

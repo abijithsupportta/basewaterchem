@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS = {
   bank_name: '',
   bank_account: '',
   bank_ifsc: '',
+  reminder_days_ahead: 4,
+  reminder_send_time: '10:00',
 };
 
 export async function GET() {
@@ -40,6 +42,17 @@ export async function PUT(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
     const body = await request.json();
+    const normalizedBody = {
+      ...body,
+      reminder_days_ahead:
+        Number.isFinite(Number(body?.reminder_days_ahead)) && Number(body.reminder_days_ahead) > 0
+          ? Number(body.reminder_days_ahead)
+          : 4,
+      reminder_send_time:
+        typeof body?.reminder_send_time === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(body.reminder_send_time)
+          ? body.reminder_send_time
+          : '10:00',
+    };
 
     // Check if row exists
     const { data: existing } = await supabase
@@ -51,7 +64,7 @@ export async function PUT(request: NextRequest) {
     if (existing) {
       const { data, error } = await supabase
         .from('company_settings')
-        .update(body)
+        .update(normalizedBody)
         .eq('id', existing.id)
         .select()
         .single();
@@ -60,7 +73,7 @@ export async function PUT(request: NextRequest) {
     } else {
       const { data, error } = await supabase
         .from('company_settings')
-        .insert(body)
+        .insert(normalizedBody)
         .select()
         .single();
       if (error) throw error;

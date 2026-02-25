@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Wrench, Building2 } from 'lucide-react';
+import { Plus, Wrench, Building2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Loading } from '@/components/ui/loading';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { useServices } from '@/hooks/use-services';
 import { formatDate, getStatusColor, getEffectiveServiceStatus, isFreeServiceActive, getFreeServiceDaysLeft, getFreeServiceValidUntil, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
@@ -58,6 +62,12 @@ function isAutoCreatedService(service: any): boolean {
   return Boolean(service?.amc_contract_id) && !service?.created_by_staff_id;
 }
 
+function getDateAfterDays(daysAhead: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  return d.toISOString().split('T')[0];
+}
+
 export default function ServicesPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -67,6 +77,24 @@ export default function ServicesPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [showNotificationDialog, setShowNotificationDialog] = useState(false);
+  const [notificationDate, setNotificationDate] = useState(getDateAfterDays(7));
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [loadingCount, setLoadingCount] = useState(false);
+  const [sendingNotifications, setSendingNotifications] = useState(false);
+  const [showSendProgress, setShowSendProgress] = useState(false);
+  const [sendProgress, setSendProgress] = useState<{
+    total: number;
+    processed: number;
+    sent: number;
+    failed: number;
+  }>({ total: 0, processed: 0, sent: 0, failed: 0 });
+  const [lastSentSummary, setLastSentSummary] = useState<{
+    date: string;
+    total: number;
+    sent: number;
+    failed: number;
+  } | null>(null);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -90,12 +118,111 @@ export default function ServicesPage() {
   const { services, loading, totalCount } = useServices(filters);
 
   useEffect(() => {
+    if (!showNotificationDialog || !notificationDate) return;
+
+    const fetchCount = async () => {
+      setLoadingCount(true);
+      try {
+        const res = await fetch(`/api/services/notifications?date=${notificationDate}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch service count');
+        setNotificationCount(data.count || 0);
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to fetch service count');
+        setNotificationCount(0);
+      } finally {
+        setLoadingCount(false);
+      }
+    };
+
+    void fetchCount();
+  }, [showNotificationDialog, notificationDate]);
+
+  const handleSendNotifications = async () => {
+    if (!notificationDate) {
+      toast.error('Please select a date');
+      return;
+    }
+
+    setSendingNotifications(true);
+    setShowSendProgress(true);
+    setSendProgress({ total: notificationCount, processed: 0, sent: 0, failed: 0 });
+    try {
+      let offset = 0;
+      let total = notificationCount;
+      let sentTotal = 0;
+      let failedTotal = 0;
+      let processedTotal = 0;
+
+      while (true) {
+        const res = await fetch('/api/services/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: notificationDate, offset, limit: 20 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send notifications');
+
+        total = data.total || total;
+        sentTotal += data.sent || 0;
+        failedTotal += data.failed || 0;
+        processedTotal += data.batchCount || 0;
+
+        setSendProgress({
+          total,
+          processed: processedTotal,
+          sent: sentTotal,
+          failed: failedTotal,
+        });
+
+        if (!data.hasMore) {
+          setLastSentSummary({
+            date: data.date || notificationDate,
+            total,
+            sent: sentTotal,
+            failed: failedTotal,
+          });
+          toast.success(`Notifications sent: ${sentTotal}/${total}`);
+          setNotificationCount(total);
+          break;
+        }
+
+        offset = Number(data.nextOffset) || offset + 20;
+      }
+
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send notifications');
+    } finally {
+      setSendingNotifications(false);
+      setTimeout(() => setShowSendProgress(false), 1500);
+    }
+  };
+
+  useEffect(() => {
     setPage(1);
   }, [search, statusFilter, typeFilter, timeFilter, customFrom, customTo, pageSize]);
 
   const filtered = typeFilter === 'free_service'
     ? services.filter((s: any) => isFreeServiceActive(s))
     : services;
+
+  const statusPriority: Record<string, number> = {
+    overdue: 0,
+    scheduled: 1,
+    assigned: 1,
+    in_progress: 2,
+    completed: 3,
+    cancelled: 4,
+  };
+
+  const sortedServices = [...filtered].sort((a: any, b: any) => {
+    const statusA = getEffectiveServiceStatus(a.status, a.scheduled_date);
+    const statusB = getEffectiveServiceStatus(b.status, b.scheduled_date);
+    const priorityA = statusPriority[statusA] ?? 99;
+    const priorityB = statusPriority[statusB] ?? 99;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return String(a.scheduled_date || '').localeCompare(String(b.scheduled_date || ''));
+  });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -109,8 +236,9 @@ export default function ServicesPage() {
           <p className="text-muted-foreground">{totalCount} service{totalCount !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/dashboard/services/upcoming"><Button variant="outline">Upcoming</Button></Link>
-          <Link href="/dashboard/services/schedule"><Button variant="outline">Schedule</Button></Link>
+          <Button variant="outline" onClick={() => setShowNotificationDialog(true)}>
+            <Bell className="mr-2 h-4 w-4" /> Send Notifications
+          </Button>
           <Link href="/dashboard/services/new"><Button><Plus className="mr-2 h-4 w-4" /> New Service</Button></Link>
         </div>
       </div>
@@ -176,14 +304,14 @@ export default function ServicesPage() {
         </select>
       </div>
 
-      {loading ? <Loading /> : filtered.length === 0 ? (
+      {loading ? <Loading /> : sortedServices.length === 0 ? (
         <Card><CardContent className="flex flex-col items-center justify-center py-12">
           <Wrench className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">No services found</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {filtered.map((service: any) => (
+          {sortedServices.map((service: any) => (
             <Link key={service.id} href={`/dashboard/services/${service.id}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="flex items-center justify-between p-4">
@@ -253,6 +381,77 @@ export default function ServicesPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={showNotificationDialog} onOpenChange={setShowNotificationDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Service Notifications</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setNotificationDate(getDateAfterDays(6))}>
+                Coming 6th Day
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setNotificationDate(getDateAfterDays(7))}>
+                Coming 7th Day
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Service Date</Label>
+              <Input type="date" value={notificationDate} onChange={(e) => setNotificationDate(e.target.value)} />
+            </div>
+
+            <div className="rounded-md border p-3 text-sm">
+              <p className="text-muted-foreground">Scheduled Services Count</p>
+              <p className="text-2xl font-bold">{loadingCount ? '...' : notificationCount}</p>
+            </div>
+
+            {lastSentSummary && (
+              <p className="text-xs text-muted-foreground">
+                Last sent: {lastSentSummary.date} • total {lastSentSummary.total}, sent {lastSentSummary.sent}, failed {lastSentSummary.failed}
+              </p>
+            )}
+
+            {showSendProgress && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Sending notifications...</span>
+                  <span>
+                    {sendProgress.sent}/{sendProgress.total} sent
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{
+                      width: `${sendProgress.total > 0 ? Math.min(100, (sendProgress.processed / sendProgress.total) * 100) : 0}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Processed {sendProgress.processed}/{sendProgress.total} • Failed {sendProgress.failed}
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={handleSendNotifications}
+                disabled={sendingNotifications || loadingCount || notificationCount <= 0}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                Send Now
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowNotificationDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -82,15 +82,17 @@ function NewServicePageContent() {
           free_service_valid_until: freeServiceValidUntil,
           payment_status: data.service_type === 'free_service' ? 'not_applicable' : undefined,
         })
-        .select('service_number')
+        .select('id, service_number')
         .single();
       if (error) throw error;
 
       // Send email notification to customer
       const selectedCustomer = customers.find((c) => c.id === data.customer_id);
-      if (selectedCustomer?.email) {
+      if (selectedCustomer?.email || selectedCustomer?.phone) {
         notifyCustomer('service_scheduled', {
+          serviceId: newService?.id,
           customerEmail: selectedCustomer.email,
+          customerPhone: selectedCustomer.phone,
           customerName: selectedCustomer.full_name,
           serviceNumber: newService?.service_number || 'New Service',
           serviceType:
