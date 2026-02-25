@@ -6,6 +6,14 @@ import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
 import type { Invoice, InvoiceFormData, InvoiceWithDetails } from '@/types';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
+import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
+
+const INVOICES_CACHE_TTL_MS = 120000;
+
+type InvoicesCachePayload = {
+  invoices: InvoiceWithDetails[];
+  totalCount: number;
+};
 
 export function useInvoices(filters?: {
   status?: string;
@@ -24,10 +32,42 @@ export function useInvoices(filters?: {
   const supabase = createClient();
   const repo = useMemo(() => new InvoiceRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
+  const cacheKey = useMemo(
+    () =>
+      `dashboard:invoices:list:v1:${JSON.stringify({
+        selectedBranchId,
+        status: filters?.status ?? null,
+        customerId: filters?.customerId ?? null,
+        search: filters?.search ?? null,
+        dateFrom: filters?.dateFrom ?? null,
+        dateTo: filters?.dateTo ?? null,
+        page: filters?.page ?? 1,
+        pageSize: filters?.pageSize ?? 20,
+      })}`,
+    [
+      selectedBranchId,
+      filters?.status,
+      filters?.customerId,
+      filters?.search,
+      filters?.dateFrom,
+      filters?.dateTo,
+      filters?.page,
+      filters?.pageSize,
+    ]
+  );
 
   const fetchInvoices = useCallback(async () => {
     try {
-      setLoading(true);
+      const cached = readStaleCache<InvoicesCachePayload>(cacheKey, INVOICES_CACHE_TTL_MS);
+
+      if (cached) {
+        setInvoices(cached.invoices);
+        setTotalCount(cached.totalCount);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       const pageSize = filters?.pageSize ?? 20;
       const page = filters?.page ?? 1;
       const offset = (page - 1) * pageSize;
@@ -39,6 +79,7 @@ export function useInvoices(filters?: {
       });
       setInvoices(data);
       setTotalCount(count);
+      writeStaleCache<InvoicesCachePayload>(cacheKey, { invoices: data, totalCount: count });
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch invoices');
@@ -55,6 +96,7 @@ export function useInvoices(filters?: {
     filters?.dateTo,
     filters?.page,
     filters?.pageSize,
+    cacheKey,
   ]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);

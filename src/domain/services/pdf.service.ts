@@ -523,13 +523,6 @@ class PDFService {
     doc.text(this.formatMoney(totalAmount), pageWidth - margin, y + 2, { align: 'right' });
     y += 10;
 
-    if (service.payment_status) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text('Payment Status: ' + service.payment_status, margin, y);
-      y += 6;
-    }
-
     if (service.work_done) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);

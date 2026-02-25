@@ -6,6 +6,14 @@ import { ServiceRepository } from '@/infrastructure/repositories';
 import { ServiceCalculator } from '@/core/services';
 import type { Service, ServiceFormData, ServiceCompleteData, ServiceWithDetails } from '@/types';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
+import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
+
+const SERVICES_CACHE_TTL_MS = 120000;
+
+type ServicesCachePayload = {
+  services: ServiceWithDetails[];
+  totalCount: number;
+};
 
 export function useServices(filters?: {
   status?: string;
@@ -27,10 +35,46 @@ export function useServices(filters?: {
   const supabase = createClient();
   const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
+  const cacheKey = useMemo(
+    () =>
+      `dashboard:services:list:v1:${JSON.stringify({
+        selectedBranchId,
+        status: filters?.status ?? null,
+        type: filters?.type ?? null,
+        customerId: filters?.customerId ?? null,
+        dateFrom: filters?.dateFrom ?? null,
+        dateTo: filters?.dateTo ?? null,
+        search: filters?.search ?? null,
+        freeOnly: filters?.freeOnly ?? false,
+        page: filters?.page ?? 1,
+        pageSize: filters?.pageSize ?? 20,
+      })}`,
+    [
+      selectedBranchId,
+      filters?.status,
+      filters?.type,
+      filters?.customerId,
+      filters?.dateFrom,
+      filters?.dateTo,
+      filters?.search,
+      filters?.freeOnly,
+      filters?.page,
+      filters?.pageSize,
+    ]
+  );
 
   const fetchServices = useCallback(async () => {
     try {
-      setLoading(true);
+      const cached = readStaleCache<ServicesCachePayload>(cacheKey, SERVICES_CACHE_TTL_MS);
+
+      if (cached) {
+        setServices(cached.services);
+        setTotalCount(cached.totalCount);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       const pageSize = filters?.pageSize ?? 20;
       const page = filters?.page ?? 1;
       const { data, count } = await repo.findAll({
@@ -41,6 +85,7 @@ export function useServices(filters?: {
       });
       setServices(data);
       setTotalCount(count);
+      writeStaleCache<ServicesCachePayload>(cacheKey, { services: data, totalCount: count });
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch services');
@@ -59,6 +104,7 @@ export function useServices(filters?: {
     filters?.freeOnly,
     filters?.page,
     filters?.pageSize,
+    cacheKey,
   ]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);

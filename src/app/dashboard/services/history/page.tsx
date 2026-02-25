@@ -13,6 +13,10 @@ import { formatDate, formatCurrency, isFreeServiceActive, getFreeServiceValidUnt
 import { SERVICE_TYPE_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 
+function isAutoCreatedService(service: any): boolean {
+  return Boolean(service?.amc_contract_id) && !service?.created_by_staff_id;
+}
+
 export default function ServiceHistoryPage() {
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +66,9 @@ export default function ServiceHistoryPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-medium">{s.service_number} - {(s.customer as any)?.full_name}</p>
+                      {isAutoCreatedService(s) && (
+                        <Badge variant="outline" className="text-xs">Created Automatically</Badge>
+                      )}
                       {isFreeServiceActive(s) && (
                         <>
                           <Badge className="bg-emerald-100 text-emerald-800">Free Service</Badge>

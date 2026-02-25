@@ -151,20 +151,34 @@ export async function applyStockLines(
   }
 ) {
   const { lines, transactionType, referenceType, referenceId, referenceLabel, createdBy } = params;
+  const aggregated = aggregateStockLinesByProduct(lines);
 
+  if (aggregated.size === 0) {
+    return;
+  }
+
+  const labelByProduct = new Map<string, string>();
   for (const line of lines) {
+    if (!labelByProduct.has(line.productId) && line.label) {
+      labelByProduct.set(line.productId, line.label);
+    }
+  }
+
+  for (const [productId, quantity] of aggregated.entries()) {
     const { error } = await supabase.rpc('log_stock_transaction', {
-      p_product_id: line.productId,
+      p_product_id: productId,
       p_transaction_type: transactionType,
-      p_quantity: -line.quantity,
+      p_quantity: -quantity,
       p_reference_type: referenceType,
       p_reference_id: referenceId,
-      p_notes: `${referenceLabel}${line.label ? ` (${line.label})` : ''}`,
+      p_notes: `${referenceLabel}${labelByProduct.get(productId) ? ` (${labelByProduct.get(productId)})` : ''}`,
       p_created_by: createdBy,
     });
 
     if (error) {
-      throw new Error(error.message || `Failed to deduct stock for ${line.label || 'stock item'}.`);
+      throw new Error(
+        error.message || `Failed to deduct stock for ${labelByProduct.get(productId) || 'stock item'}.`
+      );
     }
   }
 }

@@ -36,6 +36,10 @@ interface CompletionItem {
   inventory_product_id?: string | null;
 }
 
+function isAutoCreatedService(service: any): boolean {
+  return Boolean(service?.amc_contract_id) && !service?.created_by_staff_id;
+}
+
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -562,6 +566,12 @@ export default function ServiceDetailPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Service Record</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
+          {isAutoCreatedService(service) && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Creation Source</span>
+              <Badge variant="outline" className="text-xs">Created Automatically</Badge>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Created By</span>
             <span className="font-medium">{service.created_by_staff_name || 'Unknown'}</span>

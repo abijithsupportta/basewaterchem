@@ -63,7 +63,6 @@ export const NAV_ITEMS = [
   { label: 'Calendar', href: '/dashboard/services/calendar', icon: 'CalendarDays', roles: ['superadmin', 'manager', 'staff', 'technician'] },
   { label: 'Invoices', href: '/dashboard/invoices', icon: 'Receipt', roles: ['superadmin', 'manager', 'staff'] },
   { label: 'Inventory', href: '/dashboard/inventory/products', icon: 'Package', roles: ['superadmin', 'manager', 'staff'] },
-  { label: 'Expenses', href: '/dashboard/expenses', icon: 'Wallet', roles: ['superadmin', 'manager', 'staff'] },
   { label: 'Branches', href: '/dashboard/branches', icon: 'Building2', roles: ['superadmin', 'manager'] },
   { label: 'Staff', href: '/dashboard/staff', icon: 'Users', roles: ['superadmin', 'manager'] },
   { label: 'Settings', href: '/dashboard/settings', icon: 'Settings', roles: ['superadmin', 'manager'] },

@@ -54,6 +54,10 @@ function getDateRange(period: string): { from?: string; to?: string } {
   }
 }
 
+function isAutoCreatedService(service: any): boolean {
+  return Boolean(service?.amc_contract_id) && !service?.created_by_staff_id;
+}
+
 export default function ServicesPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -203,6 +207,9 @@ export default function ServicesPage() {
                       )}
                       {(service.branch as any) && (
                         <Badge variant="outline" className="gap-1 text-xs"><Building2 className="h-3 w-3" /> {(service.branch as any)?.branch_name}</Badge>
+                      )}
+                      {isAutoCreatedService(service) && (
+                        <Badge variant="outline" className="text-xs">Created Automatically</Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">

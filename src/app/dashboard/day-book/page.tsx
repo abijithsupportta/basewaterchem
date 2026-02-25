@@ -1,17 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { Download, ArrowRight, Wallet } from 'lucide-react';
+import { Download, Loader2, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Loading } from '@/components/ui/loading';
 import { formatCurrency, formatDate, getEffectiveServiceStatus, getStatusColor } from '@/lib/utils';
 import { SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
 import { downloadDayBookPDF } from '@/lib/daybook-pdf';
+import { toast } from 'sonner';
+import { useUserRole } from '@/lib/use-user-role';
+import { canCreateOrEdit, canDelete } from '@/lib/authz';
 
 const TIME_CHIPS = [
   { value: 'today', label: 'Today' },
@@ -21,6 +26,8 @@ const TIME_CHIPS = [
   { value: 'all', label: 'All Time' },
   { value: 'custom', label: 'Custom' },
 ];
+
+const EXPENSE_CATEGORIES = ['travel', 'salary', 'office', 'utilities', 'maintenance', 'marketing', 'purchase', 'misc'];
 
 function getDateRange(period: string): { from?: string; to?: string } {
   const now = new Date();
@@ -62,6 +69,8 @@ function isDateWithinRange(dateValue: string | null | undefined, range: { from?:
 }
 
 export default function DayBookPage() {
+  const userRole = useUserRole();
+  const canManageExpenses = canCreateOrEdit(userRole as any);
   const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -69,6 +78,17 @@ export default function DayBookPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseForm, setExpenseForm] = useState({
+    expense_date: new Date().toISOString().split('T')[0],
+    title: '',
+    category: 'misc',
+    amount: '',
+    payment_method: 'cash',
+    reference_no: '',
+    description: '',
+  });
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -140,6 +160,96 @@ export default function DayBookPage() {
       profit,
     };
   }, [invoices, services, expenses, dateRange]);
+
+  const resetExpenseForm = () => {
+    setEditingExpenseId(null);
+    setExpenseForm({
+      expense_date: new Date().toISOString().split('T')[0],
+      title: '',
+      category: 'misc',
+      amount: '',
+      payment_method: 'cash',
+      reference_no: '',
+      description: '',
+    });
+  };
+
+  const saveExpense = async () => {
+    if (!canManageExpenses) {
+      toast.error('You do not have permission to manage expenses');
+      return;
+    }
+
+    if (!expenseForm.title.trim() || !expenseForm.amount) {
+      toast.error('Title and amount are required');
+      return;
+    }
+
+    setSavingExpense(true);
+    try {
+      const response = await fetch(
+        editingExpenseId ? `/api/expenses/${editingExpenseId}` : '/api/expenses',
+        {
+          method: editingExpenseId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expense_date: expenseForm.expense_date,
+            title: expenseForm.title.trim(),
+            category: expenseForm.category,
+            amount: Number(expenseForm.amount),
+            payment_method: expenseForm.payment_method,
+            reference_no: expenseForm.reference_no || undefined,
+            description: expenseForm.description || undefined,
+          }),
+        }
+      );
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.error || 'Failed to save expense');
+      }
+
+      toast.success(editingExpenseId ? 'Expense updated' : 'Expense added');
+      resetExpenseForm();
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save expense');
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  const startEditExpense = (expense: any) => {
+    setEditingExpenseId(expense.id);
+    setExpenseForm({
+      expense_date: expense.expense_date,
+      title: expense.title || '',
+      category: expense.category || 'misc',
+      amount: String(expense.amount ?? ''),
+      payment_method: expense.payment_method || 'cash',
+      reference_no: expense.reference_no || '',
+      description: expense.description || '',
+    });
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (!canDelete(userRole)) {
+      toast.error('You do not have permission to delete expenses');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.error || 'Failed to delete expense');
+      }
+      toast.success('Expense deleted');
+      await fetchData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete expense');
+    }
+  };
 
   const downloadStatement = () => {
     downloadDayBookPDF({
@@ -226,6 +336,94 @@ export default function DayBookPage() {
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(totals.profit)}</p></div>
       </div>
 
+      <Card className="max-w-5xl">
+        <CardHeader>
+          <CardTitle className="text-base">Add Expense (Day Book)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={expenseForm.expense_date}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, expense_date: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Title</Label>
+              <Input
+                value={expenseForm.title}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="Fuel for field visit"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={expenseForm.category}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, category: e.target.value }))}
+              >
+                {EXPENSE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Amount</Label>
+              <Input
+                type="number"
+                value={expenseForm.amount}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={expenseForm.payment_method}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, payment_method: e.target.value }))}
+              >
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="card">Card</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Reference</Label>
+              <Input
+                value={expenseForm.reference_no}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, reference_no: e.target.value }))}
+                placeholder="Txn/Receipt #"
+              />
+            </div>
+            <div className="space-y-2 lg:col-span-3">
+              <Label>Description</Label>
+              <Textarea
+                value={expenseForm.description}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={saveExpense} disabled={savingExpense || !canManageExpenses}>
+              {savingExpense ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              {editingExpenseId ? 'Update Expense' : 'Add Expense'}
+            </Button>
+            {editingExpenseId && (
+              <Button variant="outline" onClick={resetExpenseForm}>
+                Cancel Edit
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">All Entries</CardTitle>
@@ -276,6 +474,7 @@ export default function DayBookPage() {
                     amount: -(exp.amount || 0),
                     dues: 0,
                     status: exp.payment_method || '-',
+                    rawExpense: exp,
                     key: `exp-${exp.id}`,
                   }))]
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -297,7 +496,21 @@ export default function DayBookPage() {
                         <td className="py-3 px-4 text-right font-medium text-amber-600">
                           {entry.dues > 0 ? formatCurrency(entry.dues) : '-'}
                         </td>
-                        <td className="py-3 px-4"><span className="text-xs text-muted-foreground">{entry.status}</span></td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">{entry.status}</span>
+                            {entry.type === 'Expense' && canManageExpenses && (
+                              <Button variant="ghost" size="icon" onClick={() => startEditExpense(entry.rawExpense)}>
+                                <Pencil className="h-3 w-3 text-blue-500" />
+                              </Button>
+                            )}
+                            {entry.type === 'Expense' && canDelete(userRole) && (
+                              <Button variant="ghost" size="icon" onClick={() => deleteExpense(entry.rawExpense.id)}>
+                                <Trash2 className="h-3 w-3 text-red-500" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                 </tbody>
