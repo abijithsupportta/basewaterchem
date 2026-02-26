@@ -1,10 +1,10 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
-import type { Invoice, InvoiceFormData, InvoiceWithDetails } from '@/types';
+import type { InvoiceFormData, InvoiceWithDetails } from '@/types';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
 
@@ -32,6 +32,10 @@ export function useInvoices(filters?: {
   const supabase = createClient();
   const repo = useMemo(() => new InvoiceRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
+  const inFlightRef = useRef<{
+    key: string;
+    promise: Promise<{ data: InvoiceWithDetails[]; count: number }>;
+  } | null>(null);
   const cacheKey = useMemo(
     () =>
       `dashboard:invoices:list:v1:${JSON.stringify({
@@ -71,16 +75,53 @@ export function useInvoices(filters?: {
       const pageSize = filters?.pageSize ?? 20;
       const page = filters?.page ?? 1;
       const offset = (page - 1) * pageSize;
-      const { data, count } = await repo.findAll({
-        ...filters,
+      const status = filters?.status;
+      const customerId = filters?.customerId;
+      const search = filters?.search;
+      const dateFrom = filters?.dateFrom;
+      const dateTo = filters?.dateTo;
+
+      const requestKey = JSON.stringify({
+        selectedBranchId,
+        status: status ?? null,
+        customerId: customerId ?? null,
+        search: search ?? null,
+        dateFrom: dateFrom ?? null,
+        dateTo: dateTo ?? null,
+        page,
+        pageSize,
+      });
+
+      if (inFlightRef.current?.key === requestKey) {
+        const pending = await inFlightRef.current.promise;
+        setInvoices(pending.data);
+        setTotalCount(pending.count);
+        setError(null);
+        return;
+      }
+
+      const promise = repo.findAll({
+        status,
+        customerId,
+        search,
+        dateFrom,
+        dateTo,
         branchId: selectedBranchId,
         limit: pageSize,
         offset,
       });
+
+      inFlightRef.current = { key: requestKey, promise };
+
+      const { data, count } = await promise;
       setInvoices(data);
       setTotalCount(count);
       writeStaleCache<InvoicesCachePayload>(cacheKey, { invoices: data, totalCount: count });
       setError(null);
+
+      if (inFlightRef.current?.key === requestKey) {
+        inFlightRef.current = null;
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch invoices');
     } finally {

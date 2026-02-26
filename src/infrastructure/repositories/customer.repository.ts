@@ -4,7 +4,26 @@ import type { Customer, CustomerFormData } from '@/types';
 
 // Reusable select shapes
 const CUSTOMER_LIST_SELECT = `
-  *,
+  id,
+  customer_code,
+  full_name,
+  phone,
+  alt_phone,
+  email,
+  address_line1,
+  address_line2,
+  city,
+  district,
+  state,
+  pincode,
+  location_landmark,
+  notes,
+  gst_number,
+  is_active,
+  created_by,
+  branch_id,
+  created_at,
+  updated_at,
   branch:branches (id, branch_name, branch_code)
 `;
 const CUSTOMER_DETAIL_SELECT = `
@@ -52,7 +71,7 @@ export class CustomerRepository {
 
     const { data, error, count } = await query;
     if (error) throw new DatabaseError(error.message);
-    return { data: (data || []) as Customer[], count: count || 0 };
+        return { data: (data || []) as unknown as Customer[], count: count || 0 };
   }
 
   async findById(id: string): Promise<Customer> {
@@ -63,7 +82,7 @@ export class CustomerRepository {
       .single();
 
     if (error || !data) throw new NotFoundError('Customer', id);
-    return data as Customer;
+        return data as unknown as Customer;
   }
 
   async create(formData: CustomerFormData): Promise<Customer> {
@@ -74,7 +93,7 @@ export class CustomerRepository {
       .single();
 
     if (error) throw new DatabaseError(error.message);
-    return data as Customer;
+        return data as unknown as Customer;
   }
 
   async update(id: string, formData: Partial<CustomerFormData>): Promise<Customer> {
@@ -87,7 +106,7 @@ export class CustomerRepository {
 
     if (error) throw new DatabaseError(error.message);
     if (!data) throw new NotFoundError('Customer', id);
-    return data as Customer;
+        return data as unknown as Customer;
   }
 
   async softDelete(id: string): Promise<void> {

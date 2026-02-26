@@ -182,7 +182,7 @@ export default function ServiceDetailPage() {
         .eq('id', id)
         .single(),
       fetch('/api/settings').then((r) => r.json()),
-      fetch('/api/inventory/products?active_only=true').then((r) => r.json()),
+      fetch('/api/inventory/products?active_only=true&in_stock_only=true').then((r) => r.json()),
     ]).then(([serviceRes, settings, inventoryData]) => {
       if (serviceRes.data) setService(serviceRes.data);
       if (settings) setCompanySettings(settings);

@@ -52,7 +52,7 @@ function NewInvoiceContent() {
   useEffect(() => {
     const fetchInventory = async () => {
       try {
-        const res = await fetch('/api/inventory/products?active_only=true');
+        const res = await fetch('/api/inventory/products?active_only=true&in_stock_only=true');
         if (res.ok) {
           const data = await res.json();
           setInventoryProducts(data);

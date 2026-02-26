@@ -3,7 +3,17 @@ import { DatabaseError, NotFoundError } from '@/core/errors';
 import type { Service, ServiceWithDetails, ServiceFormData, ServiceCompleteData } from '@/types';
 
 const SERVICE_LIST_SELECT = `
-  *,
+  id,
+  service_number,
+  service_type,
+  status,
+  scheduled_date,
+  free_service_valid_until,
+  created_at,
+  amc_contract_id,
+  created_by_staff_id,
+  created_by_staff_name,
+  completed_by_staff_name,
   customer:customers (id, full_name, phone, customer_code, address_line1, city),
   branch:branches (id, branch_name, branch_code),
   amc_contract:amc_contracts (id, contract_number, status)
@@ -66,7 +76,7 @@ export class ServiceRepository {
 
     const { data, error, count } = await query;
     if (error) throw new DatabaseError(error.message);
-    return { data: (data || []) as ServiceWithDetails[], count: count || 0 };
+    return { data: (data || []) as unknown as ServiceWithDetails[], count: count || 0 };
   }
 
   async findById(id: string) {
@@ -91,7 +101,7 @@ export class ServiceRepository {
       .limit(limit);
 
     if (error) throw new DatabaseError(error.message);
-    return (data || []) as ServiceWithDetails[];
+    return (data || []) as unknown as ServiceWithDetails[];
   }
 
   async findOverdue(limit: number = 10) {
@@ -109,7 +119,7 @@ export class ServiceRepository {
       .limit(limit);
 
     if (error) throw new DatabaseError(error.message);
-    return (data || []) as ServiceWithDetails[];
+    return (data || []) as unknown as ServiceWithDetails[];
   }
 
   async create(formData: ServiceFormData): Promise<Service> {

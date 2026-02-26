@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ServiceRepository } from '@/infrastructure/repositories';
 import { ServiceCalculator } from '@/core/services';
@@ -35,6 +35,10 @@ export function useServices(filters?: {
   const supabase = createClient();
   const repo = useMemo(() => new ServiceRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
+  const inFlightRef = useRef<{
+    key: string;
+    promise: Promise<{ data: ServiceWithDetails[]; count: number }>;
+  } | null>(null);
   const cacheKey = useMemo(
     () =>
       `dashboard:services:list:v1:${JSON.stringify({
@@ -77,16 +81,59 @@ export function useServices(filters?: {
 
       const pageSize = filters?.pageSize ?? 20;
       const page = filters?.page ?? 1;
-      const { data, count } = await repo.findAll({
-        ...filters,
+      const status = filters?.status;
+      const type = filters?.type;
+      const customerId = filters?.customerId;
+      const dateFrom = filters?.dateFrom;
+      const dateTo = filters?.dateTo;
+      const search = filters?.search;
+      const freeOnly = filters?.freeOnly;
+
+      const requestKey = JSON.stringify({
+        selectedBranchId,
+        status: status ?? null,
+        type: type ?? null,
+        customerId: customerId ?? null,
+        dateFrom: dateFrom ?? null,
+        dateTo: dateTo ?? null,
+        search: search ?? null,
+        freeOnly: freeOnly ?? false,
+        page,
+        pageSize,
+      });
+
+      if (inFlightRef.current?.key === requestKey) {
+        const pending = await inFlightRef.current.promise;
+        setServices(pending.data);
+        setTotalCount(pending.count);
+        setError(null);
+        return;
+      }
+
+      const promise = repo.findAll({
+        status,
+        type,
+        customerId,
+        dateFrom,
+        dateTo,
+        search,
+        freeOnly,
         branchId: selectedBranchId,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
+
+      inFlightRef.current = { key: requestKey, promise };
+
+      const { data, count } = await promise;
       setServices(data);
       setTotalCount(count);
       writeStaleCache<ServicesCachePayload>(cacheKey, { services: data, totalCount: count });
       setError(null);
+
+      if (inFlightRef.current?.key === requestKey) {
+        inFlightRef.current = null;
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch services');
     } finally {

@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomerRepository } from '@/infrastructure/repositories';
 import type { Customer, CustomerFormData } from '@/types';
@@ -17,6 +17,10 @@ export function useCustomers(
   const supabase = createClient();
   const repo = useMemo(() => new CustomerRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
+  const inFlightRef = useRef<{
+    key: string;
+    promise: Promise<{ data: Customer[]; count: number }>;
+  } | null>(null);
 
   const searchQuery = typeof searchQueryOrOptions === 'string'
     ? searchQueryOrOptions
@@ -25,22 +29,46 @@ export function useCustomers(
     ? 1
     : searchQueryOrOptions?.page ?? 1;
   const pageSize = typeof searchQueryOrOptions === 'string'
-    ? 1000
-    : searchQueryOrOptions?.pageSize ?? 1000;
+    ? 100
+    : searchQueryOrOptions?.pageSize ?? 100;
 
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, count } = await repo.findAll({
+
+      const requestKey = JSON.stringify({
+        selectedBranchId,
+        search: searchQuery ?? null,
+        page,
+        pageSize,
+      });
+
+      if (inFlightRef.current?.key === requestKey) {
+        const pending = await inFlightRef.current.promise;
+        setCustomers(pending.data);
+        setTotalCount(pending.count);
+        setError(null);
+        return;
+      }
+
+      const promise = repo.findAll({
         isActive: true,
         search: searchQuery,
         branchId: selectedBranchId,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
+
+      inFlightRef.current = { key: requestKey, promise };
+
+      const { data, count } = await promise;
       setCustomers(data);
       setTotalCount(count);
       setError(null);
+
+      if (inFlightRef.current?.key === requestKey) {
+        inFlightRef.current = null;
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch customers');
     } finally {

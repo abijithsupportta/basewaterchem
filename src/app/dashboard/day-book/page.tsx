@@ -10,9 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Loading } from '@/components/ui/loading';
-import { formatCurrency, formatDate, getEffectiveServiceStatus, getStatusColor } from '@/lib/utils';
-import { SERVICE_STATUS_LABELS } from '@/lib/constants';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { downloadDayBookPDF } from '@/lib/daybook-pdf';
 import { toast } from 'sonner';
 import { useUserRole } from '@/lib/use-user-role';
@@ -28,6 +26,25 @@ const TIME_CHIPS = [
 ];
 
 const EXPENSE_CATEGORIES = ['travel', 'salary', 'office', 'utilities', 'maintenance', 'marketing', 'purchase', 'misc'];
+
+interface DayBookEntry {
+  entry_key: string;
+  entry_date: string;
+  entry_type: 'Sales' | 'Service' | 'Expense';
+  reference: string;
+  description: string;
+  amount: number;
+  dues: number;
+  status: string;
+  source_id: string;
+  expense_date?: string | null;
+  expense_title?: string | null;
+  expense_category?: string | null;
+  expense_amount?: number | null;
+  expense_payment_method?: string | null;
+  expense_reference_no?: string | null;
+  expense_description?: string | null;
+}
 
 function getDateRange(period: string): { from?: string; to?: string } {
   const now = new Date();
@@ -59,27 +76,33 @@ function getDateRange(period: string): { from?: string; to?: string } {
   }
 }
 
-function isDateWithinRange(dateValue: string | null | undefined, range: { from?: string; to?: string }) {
-  if (!dateValue) return false;
-
-  const dateOnly = dateValue.split('T')[0];
-  if (range.from && dateOnly < range.from) return false;
-  if (range.to && dateOnly > range.to) return false;
-  return true;
-}
-
 export default function DayBookPage() {
   const userRole = useUserRole();
   const canManageExpenses = canCreateOrEdit(userRole as any);
+
   const [timeFilter, setTimeFilter] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [services, setServices] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [expenses, setExpenses] = useState<any[]>([]);
+
+  const [entries, setEntries] = useState<DayBookEntry[]>([]);
+  const [summary, setSummary] = useState({
+    invoiceSales: 0,
+    serviceRevenue: 0,
+    expensesTotal: 0,
+    collected: 0,
+    dues: 0,
+    totalServices: 0,
+  });
+  const [cappedFrom, setCappedFrom] = useState<string | null>(null);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [savingExpense, setSavingExpense] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+
   const [expenseForm, setExpenseForm] = useState({
     expense_date: new Date().toISOString().split('T')[0],
     title: '',
@@ -97,57 +120,62 @@ export default function DayBookPage() {
     return getDateRange(timeFilter);
   }, [timeFilter, customFrom, customTo]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [timeFilter, customFrom, customTo, pageSize]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const supabase = createBrowserClient();
+    try {
+      const query = new URLSearchParams();
+      if (dateRange.from) query.set('from', dateRange.from);
+      if (dateRange.to) query.set('to', dateRange.to);
+      query.set('page', String(page));
+      query.set('limit', String(pageSize));
 
-    let invQuery = supabase
-      .from('invoices')
-      .select('id, invoice_number, status, total_amount, amount_paid, balance_due, payment_method, payment_date, invoice_date, customer:customers(full_name)')
-      .order('invoice_date', { ascending: false });
+      const [summaryResRaw, entriesResRaw] = await Promise.all([
+        fetch(`/api/day-book/summary?${query.toString()}`),
+        fetch(`/api/day-book/entries?${query.toString()}`),
+      ]);
 
-    let srvQuery = supabase
-      .from('services')
-      .select('id, service_number, status, payment_status, total_amount, scheduled_date, completed_date, customer:customers(full_name)')
-      .order('scheduled_date', { ascending: false });
+      const summaryRes = await summaryResRaw.json();
+      const entriesRes = await entriesResRaw.json();
 
-    let expQuery = supabase
-      .from('expenses')
-      .select('id, expense_date, title, category, amount, payment_method, reference_no, description')
-      .order('expense_date', { ascending: false });
+      if (summaryRes?.success && summaryRes?.data) {
+        setSummary({
+          invoiceSales: Number(summaryRes.data.invoiceSales || 0),
+          serviceRevenue: Number(summaryRes.data.serviceRevenue || 0),
+          expensesTotal: Number(summaryRes.data.expensesTotal || 0),
+          collected: Number(summaryRes.data.collected || 0),
+          dues: Number(summaryRes.data.dues || 0),
+          totalServices: Number(summaryRes.data.totalServices || 0),
+        });
+      }
 
-    if (dateRange.from) {
-      invQuery = invQuery.gte('invoice_date', dateRange.from);
-      srvQuery = srvQuery.gte('scheduled_date', dateRange.from);
-      expQuery = expQuery.gte('expense_date', dateRange.from);
+      if (entriesRes?.success && entriesRes?.data) {
+        setEntries((entriesRes.data.entries || []) as DayBookEntry[]);
+        setTotalCount(Number(entriesRes.data.meta?.total || 0));
+        setCappedFrom(entriesRes.data.cappedFrom || null);
+      } else {
+        setEntries([]);
+        setTotalCount(0);
+        setCappedFrom(null);
+      }
+    } finally {
+      setLoading(false);
     }
-    if (dateRange.to) {
-      invQuery = invQuery.lte('invoice_date', dateRange.to);
-      srvQuery = srvQuery.lte('scheduled_date', dateRange.to);
-      expQuery = expQuery.lte('expense_date', dateRange.to);
-    }
+  }, [dateRange.from, dateRange.to, page, pageSize]);
 
-    const [invRes, srvRes, expRes] = await Promise.all([invQuery, srvQuery, expQuery]);
-    setInvoices(invRes.data || []);
-    setServices(srvRes.data || []);
-    setExpenses(expRes.data || []);
-    setLoading(false);
-  }, [dateRange]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   const totals = useMemo(() => {
-    const invoiceSales = invoices.reduce((sum: number, i: any) => sum + (i.total_amount || 0), 0);
-    const collected = invoices.reduce((sum: number, i: any) => sum + (i.amount_paid || 0), 0);
-    const dues = invoices.reduce((sum: number, i: any) => sum + (i.balance_due || 0), 0);
-    const serviceRevenue = services
-      .filter(
-        (s: any) =>
-          s.status === 'completed' &&
-          isDateWithinRange(s.completed_date || s.scheduled_date, dateRange)
-      )
-      .reduce((sum: number, s: any) => sum + (s.total_amount || 0), 0);
-    const expensesTotal = expenses.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
+    const invoiceSales = summary.invoiceSales;
+    const collected = summary.collected;
+    const dues = summary.dues;
+    const serviceRevenue = summary.serviceRevenue;
+    const expensesTotal = summary.expensesTotal;
     const profit = collected + serviceRevenue - expensesTotal;
 
     return {
@@ -159,7 +187,11 @@ export default function DayBookPage() {
       dues,
       profit,
     };
-  }, [invoices, services, expenses, dateRange]);
+  }, [summary]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endIndex = Math.min(page * pageSize, totalCount);
 
   const resetExpenseForm = () => {
     setEditingExpenseId(null);
@@ -171,23 +203,6 @@ export default function DayBookPage() {
       payment_method: 'cash',
       reference_no: '',
       description: '',
-    });
-  };
-
-  const sortExpenses = (list: any[]) =>
-    [...list].sort((a, b) => new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime());
-
-  const expenseInCurrentRange = (expenseDate: string) => isDateWithinRange(expenseDate, dateRange);
-
-  const upsertExpense = (expense: any) => {
-    setExpenses((prev) => {
-      const withoutCurrent = prev.filter((item) => item.id !== expense.id);
-
-      if (!expenseInCurrentRange(expense.expense_date)) {
-        return sortExpenses(withoutCurrent);
-      }
-
-      return sortExpenses([expense, ...withoutCurrent]);
     });
   };
 
@@ -226,13 +241,9 @@ export default function DayBookPage() {
         throw new Error(payload?.error?.message || payload?.error || 'Failed to save expense');
       }
 
-      const savedExpense = payload?.data;
-      if (savedExpense?.id) {
-        upsertExpense(savedExpense);
-      }
-
       toast.success(editingExpenseId ? 'Expense updated' : 'Expense added');
       resetExpenseForm();
+      await fetchData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save expense');
     } finally {
@@ -240,16 +251,16 @@ export default function DayBookPage() {
     }
   };
 
-  const startEditExpense = (expense: any) => {
-    setEditingExpenseId(expense.id);
+  const startEditExpense = (entry: DayBookEntry) => {
+    setEditingExpenseId(entry.source_id);
     setExpenseForm({
-      expense_date: expense.expense_date,
-      title: expense.title || '',
-      category: expense.category || 'misc',
-      amount: String(expense.amount ?? ''),
-      payment_method: expense.payment_method || 'cash',
-      reference_no: expense.reference_no || '',
-      description: expense.description || '',
+      expense_date: entry.expense_date || new Date().toISOString().split('T')[0],
+      title: entry.expense_title || '',
+      category: entry.expense_category || 'misc',
+      amount: String(entry.expense_amount ?? ''),
+      payment_method: entry.expense_payment_method || 'cash',
+      reference_no: entry.expense_reference_no || '',
+      description: entry.expense_description || '',
     });
   };
 
@@ -266,52 +277,77 @@ export default function DayBookPage() {
         throw new Error(payload?.error?.message || payload?.error || 'Failed to delete expense');
       }
       toast.success('Expense deleted');
-      setExpenses((prev) => prev.filter((expense) => expense.id !== id));
+      await fetchData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete expense');
     }
   };
 
-  const downloadStatement = () => {
-    downloadDayBookPDF({
-      periodLabel: timeFilter,
-      from: dateRange.from,
-      to: dateRange.to,
-      summary: {
-        sales: totals.totalSales,
-        services: services.length,
-        revenue: totals.serviceRevenue,
-        expenses: totals.expensesTotal,
-        dues: totals.dues,
-        collected: totals.collected,
-        profit: totals.profit,
-      },
-      rows: {
-        invoices: invoices.map((i: any) => ({
-          invoice_number: i.invoice_number,
-          invoice_date: i.invoice_date,
-          customer_name: i.customer?.full_name,
-          total_amount: i.total_amount,
-          amount_paid: i.amount_paid,
-          balance_due: i.balance_due,
-        })),
-        services: services.map((s: any) => ({
-          service_number: s.service_number,
-          scheduled_date: s.scheduled_date,
-          customer_name: s.customer?.full_name,
-          status: s.status,
-          total_amount: s.total_amount,
-          payment_status: s.payment_status,
-        })),
-        expenses: expenses.map((e: any) => ({
-          expense_date: e.expense_date,
-          title: e.title,
-          category: e.category,
-          amount: e.amount,
-          payment_method: e.payment_method,
-        })),
-      },
-    });
+  const downloadStatement = async () => {
+    try {
+      const query = new URLSearchParams();
+      if (dateRange.from) query.set('from', dateRange.from);
+      if (dateRange.to) query.set('to', dateRange.to);
+      query.set('page', '1');
+      query.set('limit', '5000');
+
+      const entriesResRaw = await fetch(`/api/day-book/entries?${query.toString()}`);
+      const entriesRes = await entriesResRaw.json();
+
+      if (!entriesRes?.success || !entriesRes?.data) {
+        throw new Error('Failed to load entries for PDF');
+      }
+
+      const exportEntries = (entriesRes.data.entries || []) as DayBookEntry[];
+
+      downloadDayBookPDF({
+        periodLabel: timeFilter,
+        from: dateRange.from,
+        to: dateRange.to,
+        summary: {
+          sales: totals.totalSales,
+          services: summary.totalServices,
+          revenue: totals.serviceRevenue,
+          expenses: totals.expensesTotal,
+          dues: totals.dues,
+          collected: totals.collected,
+          profit: totals.profit,
+        },
+        rows: {
+          invoices: exportEntries
+            .filter((entry) => entry.entry_type === 'Sales')
+            .map((entry) => ({
+              invoice_number: entry.reference,
+              invoice_date: entry.entry_date,
+              customer_name: entry.description,
+              total_amount: entry.amount,
+              amount_paid: 0,
+              balance_due: entry.dues,
+            })),
+          services: exportEntries
+            .filter((entry) => entry.entry_type === 'Service')
+            .map((entry) => ({
+              service_number: entry.reference,
+              scheduled_date: entry.entry_date,
+              customer_name: entry.description,
+              status: entry.status,
+              total_amount: entry.amount,
+              payment_status: entry.dues > 0 ? 'pending' : 'paid',
+            })),
+          expenses: exportEntries
+            .filter((entry) => entry.entry_type === 'Expense')
+            .map((entry) => ({
+              expense_date: entry.expense_date || entry.entry_date,
+              title: entry.expense_title || entry.description,
+              category: entry.expense_category || entry.reference,
+              amount: Math.abs(entry.amount),
+              payment_method: entry.expense_payment_method || entry.status,
+            })),
+        },
+      });
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to download PDF');
+    }
   };
 
   return (
@@ -324,7 +360,7 @@ export default function DayBookPage() {
             <p className="text-muted-foreground">Sales, services, and expenses in one place</p>
           </div>
         </div>
-        <Button onClick={downloadStatement}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
+        <Button onClick={() => void downloadStatement()}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -347,11 +383,17 @@ export default function DayBookPage() {
         )}
       </div>
 
+      {timeFilter === 'all' && cappedFrom && (
+        <p className="text-xs text-muted-foreground">
+          Showing recent history from {formatDate(cappedFrom)} for instant performance.
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Invoice Sales</p><p className="font-bold">{formatCurrency(totals.invoiceSales)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Sales</p><p className="font-bold">{formatCurrency(totals.serviceRevenue)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(totals.totalSales)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{services.length}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{summary.totalServices}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Expenses</p><p className="font-bold text-red-600">{formatCurrency(totals.expensesTotal)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(totals.dues)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(totals.profit)}</p></div>
@@ -467,78 +509,71 @@ export default function DayBookPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...invoices.map((inv: any) => ({
-                    date: inv.invoice_date,
-                    type: 'Sales',
-                    reference: inv.invoice_number || '-',
-                    description: inv.customer?.full_name || '-',
-                    amount: inv.total_amount || 0,
-                    dues: inv.balance_due || 0,
-                    status: inv.status,
-                    key: `inv-${inv.id}`,
-                  })),
-                  ...services.map((srv: any) => ({
-                    date: srv.completed_date || srv.scheduled_date,
-                    type: 'Service',
-                    reference: srv.service_number || '-',
-                    description: srv.customer?.full_name || '-',
-                    amount: srv.total_amount || 0,
-                    dues: srv.payment_status === 'pending' || srv.payment_status === 'partial' ? srv.total_amount || 0 : 0,
-                    status: srv.status,
-                    key: `srv-${srv.id}`,
-                  })),
-                  ...expenses.map((exp: any) => ({
-                    date: exp.expense_date,
-                    type: 'Expense',
-                    reference: exp.category,
-                    description: exp.title,
-                    amount: -(exp.amount || 0),
-                    dues: 0,
-                    status: exp.payment_method || '-',
-                    rawExpense: exp,
-                    key: `exp-${exp.id}`,
-                  }))]
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((entry: any) => (
-                      <tr key={entry.key} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4">{formatDate(entry.date)}</td>
-                        <td className="py-3 px-4">
-                          <Badge variant="outline" className={entry.type === 'Expense' ? 'border-red-500 text-red-600' : entry.type === 'Service' ? 'border-blue-500 text-blue-600' : 'border-green-500 text-green-600'}>
-                            {entry.type}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">{entry.reference}</td>
-                        <td className="py-3 px-4">{entry.description}</td>
-                        <td className="py-3 px-4 text-right font-medium">
-                          <span className={entry.amount < 0 ? 'text-red-600' : 'text-green-600'}>
-                            {formatCurrency(Math.abs(entry.amount))}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-amber-600">
-                          {entry.dues > 0 ? formatCurrency(entry.dues) : '-'}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{entry.status}</span>
-                            {entry.type === 'Expense' && canManageExpenses && (
-                              <Button variant="ghost" size="icon" onClick={() => startEditExpense(entry.rawExpense)}>
-                                <Pencil className="h-3 w-3 text-blue-500" />
-                              </Button>
-                            )}
-                            {entry.type === 'Expense' && canDelete(userRole) && (
-                              <Button variant="ghost" size="icon" onClick={() => deleteExpense(entry.rawExpense.id)}>
-                                <Trash2 className="h-3 w-3 text-red-500" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                  {entries.map((entry) => (
+                    <tr key={entry.entry_key} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4">{formatDate(entry.entry_date)}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant="outline" className={entry.entry_type === 'Expense' ? 'border-red-500 text-red-600' : entry.entry_type === 'Service' ? 'border-blue-500 text-blue-600' : 'border-green-500 text-green-600'}>
+                          {entry.entry_type}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4">{entry.reference}</td>
+                      <td className="py-3 px-4">{entry.description}</td>
+                      <td className="py-3 px-4 text-right font-medium">
+                        <span className={entry.amount < 0 ? 'text-red-600' : 'text-green-600'}>
+                          {formatCurrency(Math.abs(entry.amount))}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-medium text-amber-600">
+                        {entry.dues > 0 ? formatCurrency(entry.dues) : '-'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{entry.status}</span>
+                          {entry.entry_type === 'Expense' && canManageExpenses && (
+                            <Button variant="ghost" size="icon" onClick={() => startEditExpense(entry)}>
+                              <Pencil className="h-3 w-3 text-blue-500" />
+                            </Button>
+                          )}
+                          {entry.entry_type === 'Expense' && canDelete(userRole) && (
+                            <Button variant="ghost" size="icon" onClick={() => deleteExpense(entry.source_id)}>
+                              <Trash2 className="h-3 w-3 text-red-500" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
-              {invoices.length === 0 && services.length === 0 && expenses.length === 0 && (
+
+              {entries.length === 0 && (
                 <p className="text-sm text-muted-foreground py-12 text-center">No entries found for this period</p>
               )}
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Showing {startIndex}-{endIndex} of {totalCount}
+                </p>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="rounded-md border px-2 py-1 text-sm"
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                    Previous
+                  </Button>
+                  <span className="text-sm">Page {page} of {totalPages}</span>
+                  <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

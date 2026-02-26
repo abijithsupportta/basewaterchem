@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, CalendarDays, Wrench, CheckCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,40 +20,93 @@ interface DayData {
   completed: any[];
 }
 
+type CalendarServiceRow = {
+  id: string;
+  service_number?: string | null;
+  service_type?: string | null;
+  status?: string | null;
+  scheduled_date?: string | null;
+  completed_date?: string | null;
+  scheduled_time_slot?: string | null;
+  total_amount?: number | null;
+  description?: string | null;
+  customer?: {
+    id?: string;
+    full_name?: string | null;
+    customer_code?: string | null;
+    phone?: string | null;
+    city?: string | null;
+  } | null;
+};
+
+type MonthCachePayload = {
+  services: CalendarServiceRow[];
+  fetchedAt: number;
+};
+
+const CALENDAR_CACHE_TTL_MS = 120000;
+
 export default function CalendarPage() {
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [services, setServices] = useState<any[]>([]);
+  const [services, setServices] = useState<CalendarServiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string>(today.toISOString().split('T')[0]);
+  const monthCacheRef = useRef<Record<string, MonthCachePayload>>({});
 
   // Fetch services for the current month (both scheduled and completed)
   const fetchServices = useCallback(async () => {
-    setLoading(true);
-    const supabase = createBrowserClient();
     const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
     const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
 
-    // Fetch services scheduled in this month (not completed)
-    const { data: scheduledData } = await supabase
-      .from('services')
-      .select('*, customer:customers(id, full_name, customer_code, phone, city)')
-      .gte('scheduled_date', startDate)
-      .lte('scheduled_date', endDate)
-      .neq('status', 'completed')
-      .order('scheduled_date', { ascending: true });
+    const cached = monthCacheRef.current[monthKey];
+    if (cached && Date.now() - cached.fetchedAt < CALENDAR_CACHE_TTL_MS) {
+      setServices(cached.services);
+      setLoading(false);
+      return;
+    }
 
-    // Fetch services completed in this month
-    const { data: completedData } = await supabase
-      .from('services')
-      .select('*, customer:customers(id, full_name, customer_code, phone, city)')
-      .gte('completed_date', `${startDate}T00:00:00`)
-      .lte('completed_date', `${endDate}T23:59:59`)
-      .eq('status', 'completed')
-      .order('completed_date', { ascending: true });
+    setLoading(true);
+    const supabase = createBrowserClient();
 
-    setServices([...(scheduledData || []), ...(completedData || [])]);
+    const selectShape = 'id, service_number, service_type, status, scheduled_date, completed_date, scheduled_time_slot, total_amount, description, customer:customers(id, full_name, customer_code, phone, city)';
+
+    const [scheduledRes, completedRes] = await Promise.all([
+      supabase
+        .from('services')
+        .select(selectShape)
+        .gte('scheduled_date', startDate)
+        .lte('scheduled_date', endDate)
+        .neq('status', 'completed')
+        .order('scheduled_date', { ascending: true }),
+      supabase
+        .from('services')
+        .select(selectShape)
+        .gte('completed_date', `${startDate}T00:00:00`)
+        .lte('completed_date', `${endDate}T23:59:59`)
+        .eq('status', 'completed')
+        .order('completed_date', { ascending: true }),
+    ]);
+
+    if (scheduledRes.error || completedRes.error) {
+      setServices([]);
+      setLoading(false);
+      return;
+    }
+
+    const merged = [
+      ...((scheduledRes.data || []) as CalendarServiceRow[]),
+      ...((completedRes.data || []) as CalendarServiceRow[]),
+    ];
+
+    monthCacheRef.current[monthKey] = {
+      services: merged,
+      fetchedAt: Date.now(),
+    };
+
+    setServices(merged);
     setLoading(false);
   }, [currentMonth, currentYear]);
 
@@ -66,6 +119,7 @@ export default function CalendarPage() {
       if (svc.status === 'completed') {
         // Place completed services on the date they were completed
         const completedDate = svc.completed_date ? svc.completed_date.split('T')[0] : svc.scheduled_date;
+        if (!completedDate) continue;
         if (!map[completedDate]) map[completedDate] = { scheduled: [], completed: [] };
         map[completedDate].completed.push(svc);
       } else {

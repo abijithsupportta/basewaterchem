@@ -6,8 +6,7 @@ import Link from 'next/link';
 import {
   Users, Wrench, Clock, Calendar, CreditCard, IndianRupee,
   AlertCircle, ArrowRight, Phone, MapPin, FileCheck,
-  Banknote, Smartphone, Building2, Receipt, CircleDollarSign,
-  TrendingUp, CircleCheck, CircleDashed, CircleAlert, Wallet, Download,
+  Smartphone, Wallet,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +16,6 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { formatDate, formatCurrency, getStatusColor, getEffectiveServiceStatus, cn } from '@/lib/utils';
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { downloadDayBookPDF } from '@/lib/daybook-pdf';
 import { canAccessDashboard } from '@/lib/authz';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 import { useUserRoleState } from '@/lib/use-user-role';
@@ -130,7 +128,6 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
-  const [staffId, setStaffId] = useState<string | null>(null);
   const [messageFilter, setMessageFilter] = useState('all');
   const [messageCustomFrom, setMessageCustomFrom] = useState('');
   const [messageCustomTo, setMessageCustomTo] = useState('');
@@ -168,7 +165,6 @@ export default function DashboardPage() {
     setInvoices(payload.invoices ?? []);
     setExpenses(payload.expenses ?? []);
     setInventoryProducts(payload.inventoryProducts ?? []);
-    setStaffId(payload.staffId ?? null);
   }, []);
 
   const fetchData = useCallback(async (background = false) => {
@@ -180,7 +176,6 @@ export default function DashboardPage() {
     const todayStr = new Date().toISOString().split('T')[0];
 
     const currentStaffId = dashboardSession?.staffId ?? null;
-    setStaffId(currentStaffId);
 
     if (userRole === 'technician') {
       let techSrvQuery = supabase
@@ -469,41 +464,6 @@ export default function DashboardPage() {
     };
   }, [paymentStats, stats, expenseStats]);
 
-  const downloadStatement = () => {
-    downloadDayBookPDF({
-      periodLabel: timeFilter,
-      from: dateRange.from,
-      to: dateRange.to,
-      summary: dayBook,
-      rows: {
-        invoices: invoices.map((i: any) => ({
-          invoice_number: i.invoice_number,
-          invoice_date: i.invoice_date,
-          customer_name: i.customer?.full_name,
-          total_amount: i.total_amount,
-          amount_paid: i.amount_paid,
-          balance_due: i.balance_due,
-        })),
-        services: services.map((s: any) => ({
-          service_number: s.service_number,
-          scheduled_date: s.scheduled_date,
-          customer_name: s.customer?.full_name,
-          status: s.status,
-          total_amount: s.total_amount,
-          payment_status: s.payment_status,
-        })),
-        expenses: expenses.map((e: any) => ({
-          expense_date: e.expense_date,
-          title: e.title,
-          category: e.category,
-          amount: e.amount,
-          payment_method: e.payment_method,
-        })),
-      },
-    });
-  };
-
-
   const statCards = [
     { title: 'Total Services', value: stats.total, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { title: 'Scheduled', value: stats.scheduled, icon: FileCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -750,146 +710,6 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* ─── Payment Collection Section ─── */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <CircleDollarSign className="h-5 w-5 text-emerald-600" />
-          Payment Collection
-        </h2>
-
-        {/* Collection Summary Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Card className="border-emerald-200 bg-emerald-50/30">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="rounded-lg p-2 bg-emerald-100"><TrendingUp className="h-4 w-4 text-emerald-700" /></div>
-                <p className="text-xs font-medium text-muted-foreground">Total Invoiced</p>
-              </div>
-              <p className="text-2xl font-bold text-emerald-800">{loading ? '...' : formatCurrency(paymentStats.totalInvoiced)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{invoices.length} invoices</p>
-            </CardContent>
-          </Card>
-          <Card className="border-green-200 bg-green-50/30">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="rounded-lg p-2 bg-green-100"><IndianRupee className="h-4 w-4 text-green-700" /></div>
-                <p className="text-xs font-medium text-muted-foreground">Total Collected</p>
-              </div>
-              <p className="text-2xl font-bold text-green-700">{loading ? '...' : formatCurrency(paymentStats.totalCollected)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{paymentStats.fullyPaid} fully paid, {paymentStats.partialPaid} partial</p>
-            </CardContent>
-          </Card>
-          <Card className="border-red-200 bg-red-50/30">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3 mb-1">
-                <div className="rounded-lg p-2 bg-red-100"><AlertCircle className="h-4 w-4 text-red-600" /></div>
-                <p className="text-xs font-medium text-muted-foreground">Pending to Collect</p>
-              </div>
-              <p className="text-2xl font-bold text-red-600">{loading ? '...' : formatCurrency(paymentStats.totalPending)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{paymentStats.unpaid} unpaid, {paymentStats.partialPaid} partial</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Payment Method Breakdown + Invoice/Service Status */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {/* By Payment Method */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-blue-600" />
-                Collection by Payment Method
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Loading /> : (
-                <div className="space-y-3">
-                  {[
-                    { key: 'cash', label: 'Cash', icon: Banknote, color: 'bg-green-500', textColor: 'text-green-700' },
-                    { key: 'upi', label: 'UPI', icon: Smartphone, color: 'bg-purple-500', textColor: 'text-purple-700' },
-                    { key: 'bank_transfer', label: 'Bank Transfer', icon: Building2, color: 'bg-blue-500', textColor: 'text-blue-700' },
-                    { key: 'cheque', label: 'Cheque', icon: Receipt, color: 'bg-amber-500', textColor: 'text-amber-700' },
-                    { key: 'card', label: 'Card', icon: CreditCard, color: 'bg-indigo-500', textColor: 'text-indigo-700' },
-                  ].map(({ key, label, icon: Icon, color, textColor }) => {
-                    const amt = paymentStats.byMethod[key] || 0;
-                    const pct = paymentStats.totalCollected > 0 ? (amt / paymentStats.totalCollected) * 100 : 0;
-                    return (
-                      <div key={key} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2">
-                            <Icon className={`h-4 w-4 ${textColor}`} />
-                            {label}
-                          </span>
-                          <span className="font-semibold">{formatCurrency(amt)}</span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-muted">
-                          <div className={`h-2 rounded-full ${color} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {paymentStats.unspecified > 0 && (
-                    <div className="flex items-center justify-between text-sm border-t pt-2">
-                      <span className="text-muted-foreground">Other / Unspecified</span>
-                      <span className="font-semibold">{formatCurrency(paymentStats.unspecified)}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-sm border-t pt-2 font-bold">
-                    <span>Total Collected</span>
-                    <span className="text-green-700">{formatCurrency(paymentStats.totalCollected)}</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Invoice & Service Payment Status */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Payment Status</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Invoice breakdown */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">INVOICES</p>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-green-50/50">
-                    <div className="flex items-center gap-2"><CircleCheck className="h-4 w-4 text-green-600" /><span className="text-sm">Fully Paid</span></div>
-                    <span className="text-sm font-bold text-green-700">{paymentStats.fullyPaid}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-amber-50/50">
-                    <div className="flex items-center gap-2"><CircleDashed className="h-4 w-4 text-amber-600" /><span className="text-sm">Partially Paid</span></div>
-                    <span className="text-sm font-bold text-amber-700">{paymentStats.partialPaid}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-red-50/50">
-                    <div className="flex items-center gap-2"><CircleAlert className="h-4 w-4 text-red-600" /><span className="text-sm">Unpaid / Due</span></div>
-                    <span className="text-sm font-bold text-red-600">{paymentStats.unpaid}</span>
-                  </div>
-                </div>
-              </div>
-              {/* Service breakdown */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">SERVICES</p>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-green-50/50">
-                    <div className="flex items-center gap-2"><CircleCheck className="h-4 w-4 text-green-600" /><span className="text-sm">Paid ({paymentStats.srvPaid})</span></div>
-                    <span className="text-sm font-bold text-green-700">{formatCurrency(paymentStats.srvPaidAmt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-amber-50/50">
-                    <div className="flex items-center gap-2"><CircleDashed className="h-4 w-4 text-amber-600" /><span className="text-sm">Partial ({paymentStats.srvPartial})</span></div>
-                    <span className="text-sm font-bold text-amber-700">{formatCurrency(paymentStats.srvPartialAmt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 bg-red-50/50">
-                    <div className="flex items-center gap-2"><CircleAlert className="h-4 w-4 text-red-600" /><span className="text-sm">Pending ({paymentStats.srvPending})</span></div>
-                    <span className="text-sm font-bold text-red-600">{formatCurrency(paymentStats.srvPendingAmt)}</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">

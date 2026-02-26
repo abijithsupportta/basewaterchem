@@ -3,10 +3,19 @@ import { DatabaseError, NotFoundError } from '@/core/errors';
 import type { Invoice, InvoiceFormData, InvoiceWithDetails, InvoiceItemFormData } from '@/types';
 
 const INVOICE_LIST_SELECT = `
-  *,
+  id,
+  invoice_number,
+  customer_id,
+  branch_id,
+  invoice_date,
+  status,
+  amc_enabled,
+  total_amount,
+  amount_paid,
+  balance_due,
+  created_at,
   customer:customers (id, full_name, phone, email, address_line1, city, customer_code),
-  branch:branches (id, branch_name, branch_code),
-  items:invoice_items (*)
+  branch:branches (id, branch_name, branch_code)
 `;
 
 export class InvoiceRepository {
@@ -45,7 +54,7 @@ export class InvoiceRepository {
 
     const { data, error, count } = await query;
     if (error) throw new DatabaseError(error.message);
-    return { data: (data || []) as InvoiceWithDetails[], count: count || 0 };
+    return { data: (data || []) as unknown as InvoiceWithDetails[], count: count || 0 };
   }
 
   async findById(id: string) {

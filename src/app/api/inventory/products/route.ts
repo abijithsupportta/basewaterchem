@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const categoryId = searchParams.get('category_id');
     const activeOnly = searchParams.get('active_only') === 'true';
+    const inStockOnly = searchParams.get('in_stock_only') === 'true';
 
     let query = supabase
       .from('inventory_products')
@@ -36,6 +37,10 @@ export async function GET(request: NextRequest) {
 
     if (activeOnly) {
       query = query.eq('is_active', true);
+    }
+
+    if (inStockOnly) {
+      query = query.gt('stock_quantity', 0);
     }
 
     const { data: products, error } = await query;
