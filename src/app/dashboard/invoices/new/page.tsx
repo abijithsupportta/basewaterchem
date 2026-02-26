@@ -174,6 +174,8 @@ function NewInvoiceContent() {
   const onSubmit = async (data: any) => {
     const supabase = (await import('@/lib/supabase/client')).createBrowserClient();
     let createdInvoiceId: string | null = null;
+    let createdAmcContractId: string | null = null;
+    let createdServiceId: string | null = null;
 
     try {
       const { items: itemsData, amc_enabled, amc_period_months, ...invoiceData } = data;
@@ -206,9 +208,11 @@ function NewInvoiceContent() {
         amc_enabled: amc_enabled || false,
         amc_period_months: amc_enabled ? amc_period_months : null,
         created_by_staff_id: createdByStaffId,
-      }).select().single();
+      }).select('id, invoice_number').single();
       if (error) throw error;
       createdInvoiceId = invoice.id;
+
+      let applyStockPromise: Promise<void> = Promise.resolve();
 
       // Create invoice items
       if (normalizedItems.length > 0) {
@@ -225,7 +229,7 @@ function NewInvoiceContent() {
         const { error: insertItemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
         if (insertItemsError) throw insertItemsError;
 
-        await applyStockLines(supabase, {
+        applyStockPromise = applyStockLines(supabase, {
           lines: stockLines,
           transactionType: 'sale',
           referenceType: 'invoice',
@@ -235,59 +239,65 @@ function NewInvoiceContent() {
         });
       }
 
-      // If AMC enabled, create AMC contract and schedule first service
+      let amcPromise: Promise<void> = Promise.resolve();
+
       if (amc_enabled && amc_period_months) {
-        const invoiceDate = new Date(invoiceData.invoice_date || new Date());
-        const firstServiceDate = new Date(invoiceDate);
-        firstServiceDate.setMonth(firstServiceDate.getMonth() + amc_period_months);
-        const freeServiceValidUntil = new Date(invoiceDate);
-        freeServiceValidUntil.setDate(freeServiceValidUntil.getDate() + 365);
+        amcPromise = (async () => {
+          const invoiceDate = new Date(invoiceData.invoice_date || new Date());
+          const firstServiceDate = new Date(invoiceDate);
+          firstServiceDate.setMonth(firstServiceDate.getMonth() + amc_period_months);
+          const freeServiceValidUntil = new Date(invoiceDate);
+          freeServiceValidUntil.setDate(freeServiceValidUntil.getDate() + 365);
 
-        // Create AMC contract with next_service_date
-        const { data: amcContract, error: amcError } = await supabase.from('amc_contracts').insert({
-          customer_id: invoiceData.customer_id,
-          invoice_id: invoice.id,
-          start_date: invoiceDate.toISOString().split('T')[0],
-          end_date: firstServiceDate.toISOString().split('T')[0],
-          service_interval_months: amc_period_months,
-          total_services_included: 1,
-          services_completed: 0,
-          amount: total,
-          is_paid: false,
-          status: 'active',
-          next_service_date: firstServiceDate.toISOString().split('T')[0],
-        }).select().single();
-        if (amcError) throw amcError;
+          const { data: amcContract, error: amcError } = await supabase.from('amc_contracts').insert({
+            customer_id: invoiceData.customer_id,
+            invoice_id: invoice.id,
+            start_date: invoiceDate.toISOString().split('T')[0],
+            end_date: firstServiceDate.toISOString().split('T')[0],
+            service_interval_months: amc_period_months,
+            total_services_included: 1,
+            services_completed: 0,
+            amount: total,
+            is_paid: false,
+            status: 'active',
+            next_service_date: firstServiceDate.toISOString().split('T')[0],
+          }).select('id').single();
+          if (amcError) throw amcError;
 
-        // Create scheduled AMC service at first service date
-        const { data: createdService, error: srvError } = await supabase.from('services').insert({
-          customer_id: invoiceData.customer_id,
-          amc_contract_id: amcContract.id,
-          service_type: 'amc_service',
-          status: 'scheduled',
-          scheduled_date: firstServiceDate.toISOString().split('T')[0],
-          description: `AMC service - Invoice ${invoice.invoice_number || 'N/A'}`,
-          is_under_amc: true,
-          payment_status: 'not_applicable',
-          free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
-        }).select('id, service_number').single();
-        if (srvError) throw srvError;
+          createdAmcContractId = amcContract.id;
 
-        // Notify customer about scheduled recurring service
-        const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
-        if (selectedCust?.email || selectedCust?.phone) {
-          notifyCustomer('service_scheduled', {
-            serviceId: createdService?.id,
-            customerEmail: selectedCust.email,
-            customerPhone: selectedCust.phone,
-            customerName: selectedCust.full_name,
-            serviceNumber: createdService?.service_number || invoice.invoice_number || 'New Service',
-            serviceType: 'Recurring Service',
-            scheduledDate: firstServiceDate.toISOString().split('T')[0],
-            description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,
-          });
-        }
+          const { data: createdService, error: srvError } = await supabase.from('services').insert({
+            customer_id: invoiceData.customer_id,
+            amc_contract_id: amcContract.id,
+            service_type: 'amc_service',
+            status: 'scheduled',
+            scheduled_date: firstServiceDate.toISOString().split('T')[0],
+            description: `AMC service - Invoice ${invoice.invoice_number || 'N/A'}`,
+            is_under_amc: true,
+            payment_status: 'not_applicable',
+            free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
+          }).select('id, service_number').single();
+          if (srvError) throw srvError;
+
+          createdServiceId = createdService.id;
+
+          const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
+          if (selectedCust?.email || selectedCust?.phone) {
+            notifyCustomer('service_scheduled', {
+              serviceId: createdService?.id,
+              customerEmail: selectedCust.email,
+              customerPhone: selectedCust.phone,
+              customerName: selectedCust.full_name,
+              serviceNumber: createdService?.service_number || invoice.invoice_number || 'New Service',
+              serviceType: 'Recurring Service',
+              scheduledDate: firstServiceDate.toISOString().split('T')[0],
+              description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,
+            });
+          }
+        })();
       }
+
+      await Promise.all([applyStockPromise, amcPromise]);
 
       toast.success(
         amc_enabled
@@ -298,6 +308,12 @@ function NewInvoiceContent() {
     } catch (error: any) {
       if (createdInvoiceId) {
         try {
+          if (createdServiceId) {
+            await supabase.from('services').delete().eq('id', createdServiceId);
+          }
+          if (createdAmcContractId) {
+            await supabase.from('amc_contracts').delete().eq('id', createdAmcContractId);
+          }
           await supabase.from('invoice_items').delete().eq('invoice_id', createdInvoiceId);
           await supabase.from('invoices').delete().eq('id', createdInvoiceId);
         } catch (cleanupError) {

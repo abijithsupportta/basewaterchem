@@ -402,18 +402,23 @@ export default function DayBookPage() {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-10">
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Invoice Sales</p><p className="font-bold">{formatCurrency(totals.invoiceSales)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Sales</p><p className="font-bold">{formatCurrency(totals.serviceRevenue)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(totals.totalSales)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Invoices</p><p className="font-bold">{totals.totalInvoices}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales Done</p><p className="font-bold">{totals.totalSalesDone}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{totals.totalServices}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Expenses</p><p className="font-bold text-red-600">{formatCurrency(totals.expensesTotal)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expense Entries</p><p className="font-bold">{totals.totalExpenses}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(totals.dues)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Collected</p><p className="font-bold">{formatCurrency(totals.collected)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(totals.profit)}</p></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">Total Revenue</p>
+          <p className="font-bold text-emerald-700">{formatCurrency(totals.totalSales)}</p>
+        </div>
+        <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">Total Expense</p>
+          <p className="font-bold text-red-600">{formatCurrency(totals.expensesTotal)}</p>
+        </div>
+        <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">Total Sales</p>
+          <p className="font-bold">{formatCurrency(totals.invoiceSales)}</p>
+        </div>
+        <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">Total Service</p>
+          <p className="font-bold">{formatCurrency(totals.serviceRevenue)}</p>
+        </div>
       </div>
 
       <Card className="max-w-5xl">

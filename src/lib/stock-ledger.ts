@@ -164,7 +164,7 @@ export async function applyStockLines(
     }
   }
 
-  for (const [productId, quantity] of aggregated.entries()) {
+  const tasks = [...aggregated.entries()].map(async ([productId, quantity]) => {
     const { error } = await supabase.rpc('log_stock_transaction', {
       p_product_id: productId,
       p_transaction_type: transactionType,
@@ -180,7 +180,9 @@ export async function applyStockLines(
         error.message || `Failed to deduct stock for ${labelByProduct.get(productId) || 'stock item'}.`
       );
     }
-  }
+  });
+
+  await Promise.all(tasks);
 }
 
 export async function applyStockDeltas(
@@ -195,7 +197,7 @@ export async function applyStockDeltas(
 ) {
   const { deltas, referenceType, referenceId, referenceLabel, createdBy } = params;
 
-  for (const entry of deltas) {
+  const tasks = deltas.map(async (entry) => {
     const isDeduction = entry.delta > 0;
     const quantity = isDeduction ? -entry.delta : Math.abs(entry.delta);
     const transactionType = isDeduction ? 'sale' : 'return';
@@ -213,7 +215,9 @@ export async function applyStockDeltas(
     if (error) {
       throw new Error(error.message || 'Failed to adjust stock.');
     }
-  }
+  });
+
+  await Promise.all(tasks);
 }
 
 export async function getCurrentStaffId(supabase: SupabaseClient): Promise<string | null> {

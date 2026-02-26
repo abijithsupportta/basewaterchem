@@ -709,18 +709,23 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-10">
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(dayBook.sales)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sales Revenue</p><p className="font-bold">{formatCurrency(dayBook.salesRevenue)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Revenue</p><p className="font-bold">{formatCurrency(dayBook.serviceRevenue)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Invoices</p><p className="font-bold">{dayBook.totalInvoices}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales Done</p><p className="font-bold">{dayBook.totalSalesDone}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{dayBook.services}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expenses</p><p className="font-bold text-red-600">{formatCurrency(dayBook.expenses)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expense Entries</p><p className="font-bold">{dayBook.totalExpenses}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(dayBook.dues)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Collected</p><p className="font-bold">{formatCurrency(dayBook.collected)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${dayBook.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(dayBook.profit)}</p></div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total Revenue</p>
+              <p className="font-bold text-emerald-700">{formatCurrency(dayBook.sales)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total Expense</p>
+              <p className="font-bold text-red-600">{formatCurrency(dayBook.expenses)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total Sales</p>
+              <p className="font-bold">{formatCurrency(dayBook.salesRevenue)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Total Service</p>
+              <p className="font-bold">{formatCurrency(dayBook.serviceRevenue)}</p>
+            </div>
           </div>
         </CardContent>
       </Card>

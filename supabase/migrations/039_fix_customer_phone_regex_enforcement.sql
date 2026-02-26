@@ -1,10 +1,5 @@
--- ============================================
--- Migration 037: Enforce unique customer phone
--- ============================================
+-- Fix regex escaping for customer phone normalization and constraints (post-037 repair)
 
--- Normalize phone fields to digits-only canonical values.
--- `phone`: keep last 10 digits (India format handling, e.g. +91XXXXXXXXXX).
--- `alt_phone`: same normalization when present.
 CREATE OR REPLACE FUNCTION normalize_customer_phone_fields()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -31,20 +26,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS normalize_customers_phone_fields ON customers;
-CREATE TRIGGER normalize_customers_phone_fields
-  BEFORE INSERT OR UPDATE OF phone, alt_phone
-  ON customers
-  FOR EACH ROW
-  EXECUTE FUNCTION normalize_customer_phone_fields();
-
--- Backfill existing records to canonical format.
 UPDATE customers
 SET
   phone = right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10),
   alt_phone = nullif(right(regexp_replace(coalesce(alt_phone, ''), '[^0-9]', '', 'g'), 10), '');
 
--- Enforce exactly 10 digits for primary phone.
 ALTER TABLE customers
   DROP CONSTRAINT IF EXISTS customers_phone_10_digits_check;
 
@@ -52,8 +38,8 @@ ALTER TABLE customers
   ADD CONSTRAINT customers_phone_10_digits_check
   CHECK (phone ~ '^[0-9]{10}$') NOT VALID;
 
--- Guarantee uniqueness at DB level using normalized phone value.
--- Apply only to canonical 10-digit phones so legacy invalid rows don't block migration.
+DROP INDEX IF EXISTS ux_customers_phone_normalized;
+
 CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_phone_normalized
   ON customers ((right(regexp_replace(phone, '[^0-9]', '', 'g'), 10)))
   WHERE regexp_replace(phone, '[^0-9]', '', 'g') ~ '^[0-9]{10}$';
