@@ -8,7 +8,7 @@ export function canDelete(role: StaffRole) {
 
 // Only superadmin can manage staff
 export function canManageStaff(role: StaffRole) {
-  return role === 'superadmin';
+  return role === 'superadmin' || role === 'manager';
 }
 
 // Superadmin, manager, staff, and technician can create/edit
@@ -23,7 +23,7 @@ export function canAccessDashboard(role: StaffRole) {
 
 // Only superadmin can view staff module
 export function canAccessStaffModule(role: StaffRole) {
-  return role === 'superadmin';
+  return role === 'superadmin' || role === 'manager';
 }
 
 // Superadmin and manager can manage branches

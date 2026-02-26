@@ -26,8 +26,12 @@ export async function GET(request: NextRequest) {
       collected: Number(row?.collected || 0),
       dues: Number(row?.dues || 0),
       serviceRevenue: Number(row?.service_revenue || 0),
+      totalRevenue: Number(row?.total_revenue || 0),
       expensesTotal: Number(row?.expenses_total || 0),
+      totalInvoices: Number(row?.total_invoices || 0),
+      totalSalesDone: Number(row?.total_sales_done || 0),
       totalServices: Number(row?.total_services || 0),
+      totalExpenses: Number(row?.total_expenses || 0),
     });
   } catch (error) {
     return apiError(error);

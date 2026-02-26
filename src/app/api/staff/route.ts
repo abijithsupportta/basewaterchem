@@ -73,7 +73,7 @@ export async function GET() {
     if (!role || !canManageStaff(role)) {
       console.log('[Staff API GET] Access denied for role:', role);
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only superadmin can view staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Only superadmin/manager can view staff.' } },
         { status: 403 }
       );
     }
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     const { role } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin can add staff.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin/manager can add staff.' } },
         { status: 403 }
       );
     }
@@ -296,7 +296,7 @@ export async function PATCH(request: NextRequest) {
     const { role, userId } = await getCurrentUserRole();
     if (!role || !canManageStaff(role)) {
       return Response.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin can update staff status.' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Forbidden: Only superadmin/manager can update staff status.' } },
         { status: 403 }
       );
     }

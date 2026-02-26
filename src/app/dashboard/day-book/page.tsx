@@ -88,10 +88,14 @@ export default function DayBookPage() {
   const [summary, setSummary] = useState({
     invoiceSales: 0,
     serviceRevenue: 0,
+    totalRevenue: 0,
     expensesTotal: 0,
     collected: 0,
     dues: 0,
+    totalInvoices: 0,
+    totalSalesDone: 0,
     totalServices: 0,
+    totalExpenses: 0,
   });
   const [cappedFrom, setCappedFrom] = useState<string | null>(null);
 
@@ -145,10 +149,14 @@ export default function DayBookPage() {
         setSummary({
           invoiceSales: Number(summaryRes.data.invoiceSales || 0),
           serviceRevenue: Number(summaryRes.data.serviceRevenue || 0),
+          totalRevenue: Number(summaryRes.data.totalRevenue || 0),
           expensesTotal: Number(summaryRes.data.expensesTotal || 0),
           collected: Number(summaryRes.data.collected || 0),
           dues: Number(summaryRes.data.dues || 0),
+          totalInvoices: Number(summaryRes.data.totalInvoices || 0),
+          totalSalesDone: Number(summaryRes.data.totalSalesDone || 0),
           totalServices: Number(summaryRes.data.totalServices || 0),
+          totalExpenses: Number(summaryRes.data.totalExpenses || 0),
         });
       }
 
@@ -175,17 +183,22 @@ export default function DayBookPage() {
     const collected = summary.collected;
     const dues = summary.dues;
     const serviceRevenue = summary.serviceRevenue;
+    const totalRevenue = summary.totalRevenue || (invoiceSales + serviceRevenue);
     const expensesTotal = summary.expensesTotal;
-    const profit = collected + serviceRevenue - expensesTotal;
+    const profit = totalRevenue - expensesTotal;
 
     return {
       invoiceSales,
-      totalSales: invoiceSales + serviceRevenue,
+      totalSales: totalRevenue,
       serviceRevenue,
       expensesTotal,
       collected,
       dues,
       profit,
+      totalInvoices: summary.totalInvoices,
+      totalSalesDone: summary.totalSalesDone,
+      totalServices: summary.totalServices,
+      totalExpenses: summary.totalExpenses,
     };
   }, [summary]);
 
@@ -389,13 +402,17 @@ export default function DayBookPage() {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-10">
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Invoice Sales</p><p className="font-bold">{formatCurrency(totals.invoiceSales)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Sales</p><p className="font-bold">{formatCurrency(totals.serviceRevenue)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(totals.totalSales)}</p></div>
-        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{summary.totalServices}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Invoices</p><p className="font-bold">{totals.totalInvoices}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales Done</p><p className="font-bold">{totals.totalSalesDone}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{totals.totalServices}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Expenses</p><p className="font-bold text-red-600">{formatCurrency(totals.expensesTotal)}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expense Entries</p><p className="font-bold">{totals.totalExpenses}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(totals.dues)}</p></div>
+        <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Collected</p><p className="font-bold">{formatCurrency(totals.collected)}</p></div>
         <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(totals.profit)}</p></div>
       </div>
 

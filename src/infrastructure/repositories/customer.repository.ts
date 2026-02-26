@@ -18,7 +18,6 @@ const CUSTOMER_LIST_SELECT = `
   pincode,
   location_landmark,
   notes,
-  gst_number,
   is_active,
   created_by,
   branch_id,
@@ -92,7 +91,12 @@ export class CustomerRepository {
       .select(CUSTOMER_LIST_SELECT)
       .single();
 
-    if (error) throw new DatabaseError(error.message);
+    if (error) {
+      if (error.code === '23505' && error.message.includes('ux_customers_phone_normalized')) {
+        throw new DatabaseError('Customer phone number already exists');
+      }
+      throw new DatabaseError(error.message);
+    }
         return data as unknown as Customer;
   }
 
@@ -104,7 +108,12 @@ export class CustomerRepository {
       .select(CUSTOMER_LIST_SELECT)
       .single();
 
-    if (error) throw new DatabaseError(error.message);
+    if (error) {
+      if (error.code === '23505' && error.message.includes('ux_customers_phone_normalized')) {
+        throw new DatabaseError('Customer phone number already exists');
+      }
+      throw new DatabaseError(error.message);
+    }
     if (!data) throw new NotFoundError('Customer', id);
         return data as unknown as Customer;
   }

@@ -14,7 +14,7 @@ export function useCustomers(
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const repo = useMemo(() => new CustomerRepository(supabase), [supabase]);
   const { selectedBranchId } = useBranchSelection();
   const inFlightRef = useRef<{
@@ -52,7 +52,6 @@ export function useCustomers(
       }
 
       const promise = repo.findAll({
-        isActive: true,
         search: searchQuery,
         branchId: selectedBranchId,
         limit: pageSize,

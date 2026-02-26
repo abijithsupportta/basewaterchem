@@ -392,11 +392,11 @@ export default function DashboardPage() {
     const inProgress = services.filter((s: any) => s.status === 'in_progress').length;
     const completed = services.filter((s: any) => s.status === 'completed').length;
     const total = services.length;
-    const revenue = services
+    const serviceRevenue = services
       .filter((s: any) => s.status === 'completed' && s.total_amount)
       .reduce((sum: number, s: any) => sum + (s.total_amount || 0), 0);
 
-    return { total, scheduled, inProgress, completed, revenue };
+    return { total, scheduled, inProgress, completed, serviceRevenue };
   }, [services]);
 
   // Payment analytics from invoices
@@ -445,24 +445,32 @@ export default function DashboardPage() {
   }, [expenses]);
 
   const dayBook = useMemo(() => {
-    const sales = paymentStats.totalInvoiced + stats.revenue;
+    const salesRevenue = paymentStats.totalInvoiced;
+    const serviceRevenue = stats.serviceRevenue;
+    const totalRevenue = salesRevenue + serviceRevenue;
     const servicesCount = stats.total;
-    const revenue = stats.revenue;
+    const totalInvoices = invoices.length;
+    const totalSalesDone = invoices.filter((i: any) => (i.total_amount || 0) > 0).length;
     const expensesTotal = expenseStats.total;
+    const totalExpenses = expenseStats.count;
     const dues = paymentStats.totalPending;
     const collected = paymentStats.totalCollected;
-    const profit = collected + revenue - expensesTotal;
+    const profit = totalRevenue - expensesTotal;
 
     return {
-      sales,
+      sales: totalRevenue,
+      salesRevenue,
+      serviceRevenue,
       services: servicesCount,
-      revenue,
       expenses: expensesTotal,
+      totalExpenses,
+      totalInvoices,
+      totalSalesDone,
       dues,
       collected,
       profit,
     };
-  }, [paymentStats, stats, expenseStats]);
+  }, [paymentStats, stats, expenseStats, invoices]);
 
   const statCards = [
     { title: 'Total Services', value: stats.total, icon: Wrench, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -471,7 +479,7 @@ export default function DashboardPage() {
     { title: 'Completed', value: stats.completed, icon: Calendar, color: 'text-green-600', bg: 'bg-green-50' },
     { title: 'Pending (Overdue)', value: pendingServices.length, icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
     { title: 'Total Customers', value: totalCustomers, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { title: 'Revenue', value: formatCurrency(stats.revenue), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
+    { title: 'Revenue', value: formatCurrency(dayBook.sales), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
     { title: 'Pending Payments', value: pendingPayments, icon: CreditCard, color: 'text-rose-600', bg: 'bg-rose-50' },
   ];
 
@@ -701,11 +709,17 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-10">
             <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales</p><p className="font-bold">{formatCurrency(dayBook.sales)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Services</p><p className="font-bold">{dayBook.services}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sales Revenue</p><p className="font-bold">{formatCurrency(dayBook.salesRevenue)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Service Revenue</p><p className="font-bold">{formatCurrency(dayBook.serviceRevenue)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Invoices</p><p className="font-bold">{dayBook.totalInvoices}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Sales Done</p><p className="font-bold">{dayBook.totalSalesDone}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Services</p><p className="font-bold">{dayBook.services}</p></div>
             <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expenses</p><p className="font-bold text-red-600">{formatCurrency(dayBook.expenses)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Expense Entries</p><p className="font-bold">{dayBook.totalExpenses}</p></div>
             <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total Dues</p><p className="font-bold text-amber-600">{formatCurrency(dayBook.dues)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Collected</p><p className="font-bold">{formatCurrency(dayBook.collected)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Profit</p><p className={`font-bold ${dayBook.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(dayBook.profit)}</p></div>
           </div>
         </CardContent>

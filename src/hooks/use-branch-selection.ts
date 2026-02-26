@@ -11,6 +11,7 @@ export type BranchSelectionValue = 'all' | string;
 
 export function useBranchSelection() {
   const [selectedBranchId, setSelectedBranchIdState] = useState<BranchSelectionValue>('all');
+  const dashboardSession = useDashboardSessionOptional();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -42,6 +43,32 @@ export function useBranchSelection() {
   }, []);
 
   const isAllBranches = useMemo(() => selectedBranchId === 'all', [selectedBranchId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!dashboardSession || dashboardSession.loading) return;
+
+    const role = dashboardSession.role;
+    const userBranchId = dashboardSession.userBranch?.id || null;
+    const allowedBranchIds = new Set(dashboardSession.branches.map((branch) => branch.id));
+
+    const isPrivileged = role === 'superadmin' || role === 'manager';
+
+    const isValidSelection =
+      selectedBranchId === 'all'
+        ? isPrivileged
+        : allowedBranchIds.has(selectedBranchId);
+
+    if (isValidSelection) return;
+
+    const fallbackValue: BranchSelectionValue = isPrivileged
+      ? 'all'
+      : (userBranchId ?? 'all');
+
+    setSelectedBranchIdState(fallbackValue);
+    window.localStorage.setItem(STORAGE_KEY, fallbackValue);
+    window.dispatchEvent(new Event(EVENT_NAME));
+  }, [dashboardSession, selectedBranchId]);
 
   return { selectedBranchId, setSelectedBranchId, isAllBranches };
 }
