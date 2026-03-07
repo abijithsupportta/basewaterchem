@@ -56,6 +56,7 @@ export interface Invoice {
 }
 
 export interface InvoiceFormData {
+  invoice_number?: string;
   customer_id: string;
   branch_id: string;
   service_id?: string;

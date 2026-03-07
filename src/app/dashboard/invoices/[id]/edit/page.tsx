@@ -31,6 +31,14 @@ import {
   validateStockAvailabilityForDeltas,
 } from '@/lib/stock-ledger';
 
+const isDuplicateInvoiceNumberError = (error: any): boolean => {
+  if (!error) return false;
+  return (
+    error.code === '23505' &&
+    /invoice_number/i.test(String(error.message || ''))
+  );
+};
+
 // Export default to match page component pattern
 export default function EditInvoicePage() {
   return <Suspense fallback={<Loading />}><EditInvoiceContent /></Suspense>;
@@ -43,7 +51,7 @@ function EditInvoiceContent() {
   const { branches } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>(['manual']);
-  const [existingInvoice, setExistingInvoice] = useState<{ amountPaid: number; status: string }>({ amountPaid: 0, status: 'draft' });
+  const [existingInvoice, setExistingInvoice] = useState<{ amountPaid: number; status: string; invoiceNumber: string | null }>({ amountPaid: 0, status: 'draft', invoiceNumber: null });
   const [loading, setLoading] = useState(true);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
@@ -64,6 +72,7 @@ function EditInvoiceContent() {
   } = useForm({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
+      invoice_number: '',
       customer_id: '',
       branch_id: '',
       invoice_date: new Date().toISOString().split('T')[0],
@@ -132,9 +141,11 @@ function EditInvoiceContent() {
             setExistingInvoice({
               amountPaid: Number(inv.amount_paid || 0),
               status: String(inv.status || 'draft'),
+              invoiceNumber: inv.invoice_number || null,
             });
 
             reset({
+              invoice_number: inv.invoice_number || '',
               customer_id: inv.customer_id,
               branch_id: inv.branch_id,
               invoice_date: inv.invoice_date,
@@ -212,7 +223,8 @@ function EditInvoiceContent() {
   const onSubmit = async (data: any) => {
     try {
       const supabase = createBrowserClient();
-      const { items: itemsData, ...invoiceData } = data;
+      const { items: itemsData, invoice_number, ...invoiceData } = data;
+      const sanitizedInvoiceNumber = typeof invoice_number === 'string' ? invoice_number.trim() : '';
 
       const normalizedItems = (itemsData || []).map((item: any) => ({
         ...item,
@@ -269,6 +281,7 @@ function EditInvoiceContent() {
       // Update invoice
       const { error: invError } = await supabase.from('invoices').update({
         ...invoiceData,
+        invoice_number: sanitizedInvoiceNumber || existingInvoice.invoiceNumber,
         subtotal,
         tax_amount: taxAmount,
         total_amount: total,
@@ -300,6 +313,10 @@ function EditInvoiceContent() {
       toast.success('Invoice updated!');
       router.push(`/dashboard/invoices/${id}`);
     } catch (error: any) {
+      if (isDuplicateInvoiceNumberError(error)) {
+        toast.error('Invoice number already exists. Please use a unique invoice number.');
+        return;
+      }
       toast.error(error.message || 'Failed to update invoice');
     }
   };
@@ -414,6 +431,14 @@ function EditInvoiceContent() {
               <div className="space-y-2">
                 <Label>Invoice Date</Label>
                 <Input type="date" {...register('invoice_date')} />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Invoice Number</Label>
+                <Input
+                  {...register('invoice_number')}
+                  placeholder="Enter invoice number"
+                />
               </div>
 
               <div className="space-y-2">

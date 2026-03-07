@@ -79,6 +79,14 @@ export const invoiceItemSchema = z.object({
 });
 
 export const invoiceSchema = z.object({
+  invoice_number: z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') return value;
+      const trimmed = value.trim();
+      return trimmed === '' ? undefined : trimmed;
+    },
+    z.string().min(1, 'Invoice number cannot be empty').optional()
+  ),
   customer_id: z.string().uuid('Select a customer'),
   branch_id: z.string().uuid('Select a branch'),
   service_id: z.string().uuid().optional(),

@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
     const repo = new InvoiceRepository(supabase);
     const body = await request.json();
     const validated = invoiceSchema.parse(body);
-    const { items, ...invoiceData } = validated;
+    const { items, invoice_number, ...invoiceData } = validated;
+    const sanitizedInvoiceNumber = typeof invoice_number === 'string' ? invoice_number.trim() : '';
 
     // Calculate totals via domain service
     const calculated = InvoiceCalculator.calculate(
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
 
     const invoice = await repo.create({ 
       ...invoiceData, 
+      invoice_number: sanitizedInvoiceNumber || undefined,
       ...calculated,
       created_by_staff_id: staffId,
       created_by_staff_name: staffName,
@@ -71,6 +73,18 @@ export async function POST(request: NextRequest) {
     }
     return apiSuccess(invoice, 201);
   } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === '23505' &&
+      /invoice_number/i.test(String((error as { message?: string }).message || ''))
+    ) {
+      return NextResponse.json(
+        { error: 'Invoice number already exists. Please use a unique invoice number.' },
+        { status: 409 }
+      );
+    }
     return apiError(error);
   }
 }

@@ -30,6 +30,14 @@ import {
   validateStockAvailabilityForLines,
 } from '@/lib/stock-ledger';
 
+const isDuplicateInvoiceNumberError = (error: any): boolean => {
+  if (!error) return false;
+  return (
+    error.code === '23505' &&
+    /invoice_number/i.test(String(error.message || ''))
+  );
+};
+
 export default function NewInvoicePage() {
   return <Suspense fallback={<Loading />}><NewInvoiceContent /></Suspense>;
 }
@@ -70,6 +78,7 @@ function NewInvoiceContent() {
   } = useForm({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
+      invoice_number: '',
       customer_id: preselectedCustomer,
       branch_id: '',
       invoice_date: new Date().toISOString().split('T')[0],
@@ -178,7 +187,8 @@ function NewInvoiceContent() {
     let createdServiceId: string | null = null;
 
     try {
-      const { items: itemsData, amc_enabled, amc_period_months, ...invoiceData } = data;
+      const { items: itemsData, amc_enabled, amc_period_months, invoice_number, ...invoiceData } = data;
+      const sanitizedInvoiceNumber = typeof invoice_number === 'string' ? invoice_number.trim() : '';
 
       const normalizedItems = (itemsData || []).map((item: any) => ({
         ...item,
@@ -201,6 +211,7 @@ function NewInvoiceContent() {
       // Create the invoice
       const { data: invoice, error } = await supabase.from('invoices').insert({
         ...invoiceData,
+        invoice_number: sanitizedInvoiceNumber || null,
         subtotal,
         tax_amount: taxAmount,
         total_amount: total,
@@ -320,6 +331,10 @@ function NewInvoiceContent() {
           console.error('Failed to rollback invoice creation after stock error:', cleanupError);
         }
       }
+      if (isDuplicateInvoiceNumberError(error)) {
+        toast.error('Invoice number already exists. Please use a unique invoice number.');
+        return;
+      }
       toast.error(error.message || 'Failed to create invoice');
     }
   };
@@ -431,6 +446,13 @@ function NewInvoiceContent() {
               )}
 
               <div className="space-y-2"><Label>Invoice Date</Label><Input type="date" {...register('invoice_date')} /></div>
+              <div className="space-y-2">
+                <Label>Invoice Number <span className="text-muted-foreground text-xs">(Optional)</span></Label>
+                <Input
+                  {...register('invoice_number')}
+                  placeholder="Leave blank for auto-generated"
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Branch *</Label>
                 <select
