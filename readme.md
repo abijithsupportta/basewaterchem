@@ -4,6 +4,10 @@ Professional project documentation for Base Water Chemicals.
 
 > Document format: **Part A (Client-Facing)** + **Part B (Internal Engineering)**
 
+## Project Updates
+
+- For dated implementation updates and release notes, see `docs/PROJECT_UPDATES.md`.
+
 ---
 
 ## Part A) Client-Facing Documentation
@@ -749,11 +753,22 @@ Improvements implemented:
 
 - Removed technician invoice module access in nav and page-level route.
 
+### Phase 6 — Billing visibility and reminder automation hardening
+
+- Standardized invoice list behavior around business dates and due-payment prioritization.
+- Added dashboard-to-invoice due-payment drill-down with due-focused filtering and sorting.
+- Stabilized invoice filter URL persistence without UI flicker and with browser back/forward sync.
+- Enabled scheduled reminder automation for production by adding platform cron config and route compatibility.
+- Completed build and lint-error fixes to keep release quality stable.
+
 ### Current state
 
 - Build stable
 - Role controls stronger
 - Service completion UX significantly faster
+- Dashboard pending-payment visibility aligned with billing operations
+- Invoice list filtering and sorting behavior is more predictable and shareable via URL
+- Scheduled reminder pipeline is configured for production cron execution
 - Documentation now standardized and comprehensive
 
 ---
