@@ -40,7 +40,7 @@ function getCronReadiness() {
     hasSupabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     hasFast2SmsApiKey: Boolean(process.env.FAST2SMS_API_KEY),
     route: '/api/cron/service-reminders',
-    schedule: '*/30 * * * *',
+    schedule: '0 0 * * *',
   };
 }
 
