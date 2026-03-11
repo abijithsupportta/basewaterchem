@@ -29,6 +29,21 @@ function isAuthorizedCronRequest(request: NextRequest): boolean {
   return secretParam === cronSecret;
 }
 
+function isDryRun(request: NextRequest): boolean {
+  const value = (request.nextUrl.searchParams.get('dryRun') || '').toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
+function getCronReadiness() {
+  return {
+    hasCronSecret: Boolean(process.env.CRON_SECRET),
+    hasSupabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    hasFast2SmsApiKey: Boolean(process.env.FAST2SMS_API_KEY),
+    route: '/api/cron/service-reminders',
+    schedule: '*/30 * * * *',
+  };
+}
+
 async function runServiceReminders() {
   const supabase = await createServiceRoleClient();
   const serviceRepo = new ServiceRepository(supabase);
@@ -89,6 +104,15 @@ export async function GET(request: NextRequest) {
       throw new UnauthorizedError('Invalid cron secret');
     }
 
+    if (isDryRun(request)) {
+      return apiSuccess({
+        ok: true,
+        dryRun: true,
+        message: 'Cron endpoint is reachable and authorized. No reminders were sent.',
+        readiness: getCronReadiness(),
+      });
+    }
+
     return apiSuccess(await runServiceReminders());
   } catch (error) {
     return apiError(error);
@@ -99,6 +123,15 @@ export async function POST(request: NextRequest) {
   try {
     if (!isAuthorizedCronRequest(request)) {
       throw new UnauthorizedError('Invalid cron secret');
+    }
+
+    if (isDryRun(request)) {
+      return apiSuccess({
+        ok: true,
+        dryRun: true,
+        message: 'Cron endpoint is reachable and authorized. No reminders were sent.',
+        readiness: getCronReadiness(),
+      });
     }
 
     return apiSuccess(await runServiceReminders());

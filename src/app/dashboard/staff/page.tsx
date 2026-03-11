@@ -274,6 +274,11 @@ export default function StaffPage() {
   };
 
   const handleDeleteStaff = async (staff: StaffItem) => {
+    if (staff.role === 'superadmin') {
+      toast.error('Superadmin cannot be deleted from staff module');
+      return;
+    }
+
     const confirmed = window.confirm(
       `Delete ${staff.full_name}? This removes both staff database record and Supabase auth user.`
     );
@@ -431,7 +436,7 @@ export default function StaffPage() {
                           Resend Credentials
                         </Button>
                       )}
-                      {canDelete(userRole) && (
+                      {canDelete(userRole) && staff.role !== 'superadmin' && (
                         <Button
                           size="sm"
                           variant="outline"

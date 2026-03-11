@@ -793,6 +793,18 @@ Improvements implemented:
 2. Validate email environment credentials.
 3. Retry via resend flow.
 
+### 15.4 If cron reminders are not running
+
+1. Verify `vercel.json` contains cron schedule for `/api/cron/service-reminders`.
+2. Confirm proxy/middleware matcher excludes `api/cron/service-reminders` from auth session enforcement.
+3. Run safe verification call (no sends):
+   - `GET /api/cron/service-reminders?dryRun=1`
+   - include `x-vercel-cron: 1` or provide `secret=<CRON_SECRET>`.
+4. Confirm readiness flags are true in response:
+   - `hasCronSecret`
+   - `hasSupabaseServiceRoleKey`
+   - `hasFast2SmsApiKey`
+
 ---
 
 ## 16) Risks and Mitigations

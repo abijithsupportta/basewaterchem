@@ -23,6 +23,13 @@ Canonical timeline of production-impacting updates, organized by date.
 - Added `vercel.json` cron schedule for `/api/cron/service-reminders` (every 30 minutes).
 - Extended cron API route to support both `GET` (Vercel Cron) and `POST` triggers.
 - Hardened cron authorization handling for Vercel header, bearer token, and query-secret based schedulers.
+- Added safe `dryRun` mode (`?dryRun=1`) to verify cron authorization/readiness without sending reminders.
+
+### Cron Root Cause Found and Fixed
+
+- Found that global auth proxy/middleware was still intercepting `/api/cron/service-reminders` and returning `401` before route logic executed.
+- Updated proxy matcher to exclude `/api/cron/service-reminders` from session-based auth middleware.
+- Re-verified cron endpoint locally using Vercel-style header (`x-vercel-cron: 1`) with `dryRun=1` and confirmed successful response.
 
 ### Validation and Delivery
 
