@@ -15,21 +15,169 @@ import { useUserRole } from '@/lib/use-user-role';
 import { formatDate, formatDateTime, formatCurrency, getStatusColor } from '@/lib/utils';
 import { INVOICE_STATUS_LABELS } from '@/lib/constants';
 import { createBrowserClient } from '@/lib/supabase/client';
+import type { InvoiceSortBy } from '@/types';
 
 type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+type InvoiceStatusFilter = 'all' | 'pending_due' | 'draft' | 'paid' | 'partial';
+
+const INVOICE_SORT_OPTIONS: InvoiceSortBy[] = [
+  'invoice_date_desc',
+  'invoice_date_asc',
+  'created_at_desc',
+  'created_at_asc',
+  'total_amount_desc',
+  'total_amount_asc',
+  'balance_due_desc',
+  'balance_due_asc',
+];
+
+const DATE_FILTER_OPTIONS: DateFilter[] = ['all', 'today', 'yesterday', 'week', 'month', 'custom'];
+const STATUS_FILTER_OPTIONS: InvoiceStatusFilter[] = ['all', 'pending_due', 'draft', 'paid', 'partial'];
+
+function isInvoiceSortBy(value: string | null): value is InvoiceSortBy {
+  return !!value && INVOICE_SORT_OPTIONS.includes(value as InvoiceSortBy);
+}
+
+function isDateFilter(value: string | null): value is DateFilter {
+  return !!value && DATE_FILTER_OPTIONS.includes(value as DateFilter);
+}
+
+function isStatusFilter(value: string | null): value is InvoiceStatusFilter {
+  return !!value && STATUS_FILTER_OPTIONS.includes(value as InvoiceStatusFilter);
+}
+
+function getInvoiceFiltersFromUrl(): {
+  search: string;
+  status: InvoiceStatusFilter;
+  sortBy: InvoiceSortBy;
+  dateFilter: DateFilter;
+  customStartDate: string;
+  customEndDate: string;
+} {
+  if (typeof window === 'undefined') {
+    return {
+      search: '',
+      status: 'all',
+      sortBy: 'invoice_date_desc',
+      dateFilter: 'all',
+      customStartDate: '',
+      customEndDate: '',
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const dateFilterParam = params.get('dateFilter');
+  const resolvedDateFilter = isDateFilter(dateFilterParam) ? dateFilterParam : 'all';
+  const customStartDate = resolvedDateFilter === 'custom' ? (params.get('dateFrom') || '') : '';
+  const customEndDate = resolvedDateFilter === 'custom' ? (params.get('dateTo') || '') : '';
+  const statusParam = params.get('status');
+  const sortParam = params.get('sort');
+
+  return {
+    search: params.get('search') || '',
+    status: isStatusFilter(statusParam) ? statusParam : 'all',
+    sortBy: isInvoiceSortBy(sortParam) ? sortParam : 'invoice_date_desc',
+    dateFilter: resolvedDateFilter,
+    customStartDate,
+    customEndDate,
+  };
+}
 
 export default function InvoicesPage() {
   const router = useRouter();
   const userRole = useUserRole();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
+  const [search, setSearch] = useState(() => getInvoiceFiltersFromUrl().search);
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>(() => getInvoiceFiltersFromUrl().status);
+  const [sortBy, setSortBy] = useState<InvoiceSortBy>(() => getInvoiceFiltersFromUrl().sortBy);
+  const [dateFilter, setDateFilter] = useState<DateFilter>(() => getInvoiceFiltersFromUrl().dateFilter);
+  const [customStartDate, setCustomStartDate] = useState(() => getInvoiceFiltersFromUrl().customStartDate);
+  const [customEndDate, setCustomEndDate] = useState(() => getInvoiceFiltersFromUrl().customEndDate);
   const [latestCollectors, setLatestCollectors] = useState<Record<string, string>>({});
   const [latestCollectionAt, setLatestCollectionAt] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncFromUrl = () => {
+      const next = getInvoiceFiltersFromUrl();
+      setSearch((prev) => (prev === next.search ? prev : next.search));
+      setStatusFilter((prev) => (prev === next.status ? prev : next.status));
+      setSortBy((prev) => (prev === next.sortBy ? prev : next.sortBy));
+      setDateFilter((prev) => (prev === next.dateFilter ? prev : next.dateFilter));
+      setCustomStartDate((prev) => (prev === next.customStartDate ? prev : next.customStartDate));
+      setCustomEndDate((prev) => (prev === next.customEndDate ? prev : next.customEndDate));
+    };
+
+    const onPopState = () => {
+      syncFromUrl();
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (!search.trim()) {
+      params.delete('search');
+    } else {
+      params.set('search', search.trim());
+    }
+
+    if (statusFilter === 'all') {
+      params.delete('status');
+    } else {
+      params.set('status', statusFilter);
+    }
+
+    if (sortBy === 'invoice_date_desc') {
+      params.delete('sort');
+    } else {
+      params.set('sort', sortBy);
+    }
+
+    if (dateFilter === 'all') {
+      params.delete('dateFilter');
+      params.delete('dateFrom');
+      params.delete('dateTo');
+    } else {
+      params.set('dateFilter', dateFilter);
+      if (dateFilter === 'custom') {
+        if (customStartDate) {
+          params.set('dateFrom', customStartDate);
+        } else {
+          params.delete('dateFrom');
+        }
+        if (customEndDate) {
+          params.set('dateTo', customEndDate);
+        } else {
+          params.delete('dateTo');
+        }
+      } else {
+        params.delete('dateFrom');
+        params.delete('dateTo');
+      }
+    }
+
+    const nextQuery = params.toString();
+    const currentQuery = new URLSearchParams(window.location.search).toString();
+    if (nextQuery === currentQuery) {
+      return;
+    }
+
+    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.replaceState({}, '', nextUrl);
+  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate]);
 
   // Prevent technicians from accessing invoices
   useEffect(() => {
@@ -38,27 +186,26 @@ export default function InvoicesPage() {
     }
   }, [userRole, router]);
 
-  // If technician, return early to prevent rendering
-  if (userRole === 'technician') {
-    return <Loading />;
-  }
-
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, dateFilter, customStartDate, customEndDate, pageSize]);
+  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, pageSize]);
 
-  const getDateRange = (filter: DateFilter) => {
+  const dateRange = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    switch (filter) {
+
+    let range: { start: Date; end: Date } | null = null;
+
+    switch (dateFilter) {
       case 'today': {
-        return { start: today, end: new Date(today.getTime() + 86400000 - 1) };
+        range = { start: today, end: new Date(today.getTime() + 86400000 - 1) };
+        break;
       }
       case 'yesterday': {
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        return { start: yesterday, end: new Date(yesterday.getTime() + 86400000 - 1) };
+        range = { start: yesterday, end: new Date(yesterday.getTime() + 86400000 - 1) };
+        break;
       }
       case 'week': {
         const weekStart = new Date(today);
@@ -66,29 +213,28 @@ export default function InvoicesPage() {
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
         weekEnd.setHours(23, 59, 59, 999);
-        return { start: weekStart, end: weekEnd };
+        range = { start: weekStart, end: weekEnd };
+        break;
       }
       case 'month': {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        return { start: monthStart, end: monthEnd };
+        range = { start: monthStart, end: monthEnd };
+        break;
       }
       case 'custom': {
         if (customStartDate && customEndDate) {
           const start = new Date(customStartDate);
           const end = new Date(customEndDate);
           end.setHours(23, 59, 59, 999);
-          return { start, end };
+          range = { start, end };
         }
-        return null;
+        break;
       }
       default:
-        return null;
+        range = null;
     }
-  };
 
-  const dateRange = useMemo(() => {
-    const range = getDateRange(dateFilter);
     if (!range) return null;
     return {
       start: range.start.toISOString().split('T')[0],
@@ -101,6 +247,7 @@ export default function InvoicesPage() {
     search: search || undefined,
     dateFrom: dateRange?.start,
     dateTo: dateRange?.end,
+    sortBy,
     page,
     pageSize,
   });
@@ -176,6 +323,11 @@ export default function InvoicesPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const startIndex = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const endIndex = Math.min(page * pageSize, totalCount);
+
+  // Render after all hooks to keep hook call order stable.
+  if (userRole === 'technician') {
+    return <Loading />;
+  }
 
   return (
     <div className="space-y-6">
@@ -279,14 +431,22 @@ export default function InvoicesPage() {
 
       <div className="flex flex-wrap gap-4">
         <div className="flex-1 min-w-[200px]"><SearchBar value={search} onChange={setSearch} placeholder="Search invoices..." /></div>
-        <select className="rounded-md border px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select className="rounded-md border px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as InvoiceStatusFilter)}>
           <option value="all">All Status</option>
+          <option value="pending_due">Pending Due</option>
           <option value="draft">Due</option>
-          <option value="sent">Sent</option>
           <option value="paid">Paid</option>
           <option value="partial">Partial</option>
-          <option value="overdue">Overdue</option>
-          <option value="cancelled">Cancelled</option>
+        </select>
+        <select className="rounded-md border px-3 py-2 text-sm" value={sortBy} onChange={(e) => setSortBy(e.target.value as InvoiceSortBy)}>
+          <option value="invoice_date_desc">Invoice Date: Latest to Oldest</option>
+          <option value="invoice_date_asc">Invoice Date: Oldest to Latest</option>
+          <option value="created_at_desc">Added: Newest First</option>
+          <option value="created_at_asc">Added: Oldest First</option>
+          <option value="total_amount_desc">Amount: High to Low</option>
+          <option value="total_amount_asc">Amount: Low to High</option>
+          <option value="balance_due_desc">Due Amount: High to Low</option>
+          <option value="balance_due_asc">Due Amount: Low to High</option>
         </select>
       </div>
 

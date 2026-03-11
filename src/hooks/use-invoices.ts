@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { InvoiceRepository } from '@/infrastructure/repositories';
 import { InvoiceCalculator } from '@/core/services';
-import type { InvoiceFormData, InvoiceWithDetails } from '@/types';
+import type { InvoiceFormData, InvoiceSortBy, InvoiceWithDetails } from '@/types';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 import { readStaleCache, writeStaleCache } from '@/lib/stale-cache';
 
@@ -21,6 +21,7 @@ export function useInvoices(filters?: {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  sortBy?: InvoiceSortBy;
   page?: number;
   pageSize?: number;
 }) {
@@ -45,6 +46,7 @@ export function useInvoices(filters?: {
         search: filters?.search ?? null,
         dateFrom: filters?.dateFrom ?? null,
         dateTo: filters?.dateTo ?? null,
+        sortBy: filters?.sortBy ?? 'invoice_date_desc',
         page: filters?.page ?? 1,
         pageSize: filters?.pageSize ?? 20,
       })}`,
@@ -55,6 +57,7 @@ export function useInvoices(filters?: {
       filters?.search,
       filters?.dateFrom,
       filters?.dateTo,
+      filters?.sortBy,
       filters?.page,
       filters?.pageSize,
     ]
@@ -80,6 +83,7 @@ export function useInvoices(filters?: {
       const search = filters?.search;
       const dateFrom = filters?.dateFrom;
       const dateTo = filters?.dateTo;
+      const sortBy = filters?.sortBy ?? 'invoice_date_desc';
 
       const requestKey = JSON.stringify({
         selectedBranchId,
@@ -88,6 +92,7 @@ export function useInvoices(filters?: {
         search: search ?? null,
         dateFrom: dateFrom ?? null,
         dateTo: dateTo ?? null,
+        sortBy,
         page,
         pageSize,
       });
@@ -106,6 +111,7 @@ export function useInvoices(filters?: {
         search,
         dateFrom,
         dateTo,
+        sortBy,
         branchId: selectedBranchId,
         limit: pageSize,
         offset,
@@ -135,6 +141,7 @@ export function useInvoices(filters?: {
     filters?.search,
     filters?.dateFrom,
     filters?.dateTo,
+    filters?.sortBy,
     filters?.page,
     filters?.pageSize,
     cacheKey,

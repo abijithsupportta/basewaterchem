@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseError, NotFoundError } from '@/core/errors';
-import type { Invoice, InvoiceFormData, InvoiceWithDetails, InvoiceItemFormData } from '@/types';
+import type { Invoice, InvoiceSortBy, InvoiceWithDetails } from '@/types';
 
 const INVOICE_LIST_SELECT = `
   id,
@@ -21,6 +21,47 @@ const INVOICE_LIST_SELECT = `
 export class InvoiceRepository {
   constructor(private readonly db: SupabaseClient) {}
 
+  private applySort(
+    query: any,
+    sortBy: InvoiceSortBy
+  ) {
+    switch (sortBy) {
+      case 'invoice_date_asc':
+        return query
+          .order('invoice_date', { ascending: true })
+          .order('created_at', { ascending: true });
+      case 'created_at_desc':
+        return query.order('created_at', { ascending: false });
+      case 'created_at_asc':
+        return query.order('created_at', { ascending: true });
+      case 'total_amount_desc':
+        return query
+          .order('total_amount', { ascending: false })
+          .order('invoice_date', { ascending: false })
+          .order('created_at', { ascending: false });
+      case 'total_amount_asc':
+        return query
+          .order('total_amount', { ascending: true })
+          .order('invoice_date', { ascending: false })
+          .order('created_at', { ascending: false });
+      case 'balance_due_desc':
+        return query
+          .order('balance_due', { ascending: false })
+          .order('invoice_date', { ascending: false })
+          .order('created_at', { ascending: false });
+      case 'balance_due_asc':
+        return query
+          .order('balance_due', { ascending: true })
+          .order('invoice_date', { ascending: false })
+          .order('created_at', { ascending: false });
+      case 'invoice_date_desc':
+      default:
+        return query
+          .order('invoice_date', { ascending: false })
+          .order('created_at', { ascending: false });
+    }
+  }
+
   async findAll(filters?: {
     status?: string;
     customerId?: string;
@@ -28,15 +69,23 @@ export class InvoiceRepository {
     search?: string;
     dateFrom?: string;
     dateTo?: string;
+    sortBy?: InvoiceSortBy;
     limit?: number;
     offset?: number;
   }) {
     let query = this.db
       .from('invoices')
-      .select(INVOICE_LIST_SELECT, { count: 'exact' })
-      .order('created_at', { ascending: false });
+      .select(INVOICE_LIST_SELECT, { count: 'exact' });
 
-    if (filters?.status) query = query.eq('status', filters.status);
+    query = this.applySort(query, filters?.sortBy ?? 'invoice_date_desc');
+
+    if (filters?.status === 'pending_due') {
+      query = query
+        .gt('balance_due', 0)
+        .neq('status', 'cancelled');
+    } else if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
     if (filters?.branchId && filters.branchId !== 'all') query = query.eq('branch_id', filters.branchId);
     if (filters?.dateFrom) query = query.gte('invoice_date', filters.dateFrom);

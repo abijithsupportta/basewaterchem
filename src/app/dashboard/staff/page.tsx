@@ -361,7 +361,7 @@ export default function StaffPage() {
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         {filteredStaffList.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            <p>No staff members found. Click "Add Staff" to create one.</p>
+            <p>No staff members found. Click &quot;Add Staff&quot; to create one.</p>
           </div>
         ) : (
           <table className="w-full table-auto border-collapse text-sm">

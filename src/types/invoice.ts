@@ -6,6 +6,16 @@ export type InvoiceStatus =
   | 'overdue'
   | 'cancelled';
 
+export type InvoiceSortBy =
+  | 'invoice_date_desc'
+  | 'invoice_date_asc'
+  | 'created_at_desc'
+  | 'created_at_asc'
+  | 'total_amount_desc'
+  | 'total_amount_asc'
+  | 'balance_due_desc'
+  | 'balance_due_asc';
+
 export interface InvoiceItem {
   id: string;
   invoice_id: string;

@@ -114,7 +114,7 @@ export default function BranchesPage() {
   if (!canManageBranches(userRole)) {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-muted-foreground">You don't have permission to access this page</p>
+        <p className="text-muted-foreground">You don&apos;t have permission to access this page</p>
       </div>
     );
   }

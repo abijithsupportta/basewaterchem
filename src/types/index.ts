@@ -15,6 +15,7 @@ export type {
   InvoiceFormData,
   InvoiceItem,
   InvoiceItemFormData,
+  InvoiceSortBy,
   InvoiceStatus,
   InvoiceWithDetails,
 } from './invoice';

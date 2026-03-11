@@ -144,7 +144,7 @@ export default function CategoriesPage() {
 
         {categories.length === 0 && (
           <div className="col-span-full py-12 text-center text-muted-foreground">
-            No categories yet. Click "Add Category" to create one.
+            No categories yet. Click &quot;Add Category&quot; to create one.
           </div>
         )}
       </div>

@@ -142,7 +142,7 @@ export function Sidebar() {
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">Sign Out</h2>
                   <p className="mt-2 text-sm text-gray-600">
-                    Are you sure you want to sign out? You'll need to log in again to access the service manager.
+                    Are you sure you want to sign out? You&apos;ll need to log in again to access the service manager.
                   </p>
                 </div>
 

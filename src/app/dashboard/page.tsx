@@ -248,14 +248,6 @@ export default function DashboardPage() {
 
     if (selectedBranchId && selectedBranchId !== 'all') custQuery = custQuery.eq('branch_id', selectedBranchId);
 
-    // Pending invoice payments count
-    let invCountQuery = supabase
-      .from('invoices')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['sent', 'partial', 'overdue']);
-
-    if (selectedBranchId && selectedBranchId !== 'all') invCountQuery = invCountQuery.eq('branch_id', selectedBranchId);
-
     // All invoices (for payment analytics, filtered by invoice_date AND branch)
     let invDataQuery = supabase
       .from('invoices')
@@ -276,6 +268,16 @@ export default function DashboardPage() {
     if (dateRange.from) expenseQuery = expenseQuery.gte('expense_date', dateRange.from);
     if (dateRange.to) expenseQuery = expenseQuery.lte('expense_date', dateRange.to);
 
+    let invCountQuery = supabase
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .gt('balance_due', 0)
+      .neq('status', 'cancelled');
+
+    if (selectedBranchId && selectedBranchId !== 'all') {
+      invCountQuery = invCountQuery.eq('branch_id', selectedBranchId);
+    }
+
     const [srvRes, pendRes, custRes, invCountRes, invDataRes, expRes] = await Promise.all([
       srvQuery,
       pendingQuery,
@@ -284,6 +286,9 @@ export default function DashboardPage() {
       invDataQuery,
       expenseQuery,
     ]);
+
+    const invoicesData = invDataRes.data || [];
+    const pendingPaymentsCount = invCountRes.count || 0;
 
     const allServices = srvRes.data || [];
     const servicesInRange = allServices.filter((service: any) => {
@@ -297,15 +302,15 @@ export default function DashboardPage() {
     setServices(servicesInRange);
     setPendingServices(pendRes.data || []);
     setTotalCustomers(custRes.count || 0);
-    setPendingPayments(invCountRes.count || 0);
-    setInvoices(invDataRes.data || []);
+    setPendingPayments(pendingPaymentsCount);
+    setInvoices(invoicesData);
     setExpenses(expRes.data || []);
     const nextPayload: DashboardCachePayload = {
       services: servicesInRange,
       pendingServices: pendRes.data || [],
       totalCustomers: custRes.count || 0,
-      pendingPayments: invCountRes.count || 0,
-      invoices: invDataRes.data || [],
+      pendingPayments: pendingPaymentsCount,
+      invoices: invoicesData,
       expenses: expRes.data || [],
       inventoryProducts: [],
       staffId: currentStaffId,
@@ -480,7 +485,14 @@ export default function DashboardPage() {
     { title: 'Pending (Overdue)', value: pendingServices.length, icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
     { title: 'Total Customers', value: totalCustomers, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50' },
     { title: 'Revenue', value: formatCurrency(dayBook.sales), icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50', isFormatted: true },
-    { title: 'Pending Payments', value: pendingPayments, icon: CreditCard, color: 'text-rose-600', bg: 'bg-rose-50' },
+    {
+      title: 'Pending Payments',
+      value: pendingPayments,
+      icon: CreditCard,
+      color: 'text-rose-600',
+      bg: 'bg-rose-50',
+      href: '/dashboard/invoices?status=pending_due&sort=balance_due_desc',
+    },
   ];
 
   const technicianDues = useMemo(() => {
@@ -690,7 +702,13 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">{card.title}</p>
-                  <p className="text-xl font-bold">{loading ? '...' : card.value}</p>
+                  {card.href ? (
+                    <Link href={card.href} className="text-xl font-bold underline decoration-dotted underline-offset-4 hover:text-primary transition-colors">
+                      {loading ? '...' : card.value}
+                    </Link>
+                  ) : (
+                    <p className="text-xl font-bold">{loading ? '...' : card.value}</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
