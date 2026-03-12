@@ -91,9 +91,9 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPassword = password.trim();
-    if (normalizedPassword.length !== 6) {
+    if (normalizedPassword.length < 8) {
       return Response.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Password must be exactly 6 characters.' } },
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Password must be at least 8 characters.' } },
         { status: 400 }
       );
     }

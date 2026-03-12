@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ExpenseRepository } from '@/infrastructure/repositories/expense.repository';
 import { apiError, apiSuccess } from '@/core/api';
-import { canCreateOrEdit, type StaffRole } from '@/lib/authz';
+import { canCreateOrEdit, canDelete, type StaffRole } from '@/lib/authz';
 import { z } from 'zod';
 
 const expenseUpdateSchema = z.object({
@@ -50,8 +50,8 @@ export async function DELETE(
     const user = (await supabase.auth.getUser()).data.user;
     const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
 
-    if (!canCreateOrEdit(userRole)) {
-      return NextResponse.json({ error: 'Forbidden: Only superadmin/manager/staff can delete expenses.' }, { status: 403 });
+    if (!canDelete(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Only superadmin can delete expenses.' }, { status: 403 });
     }
 
     const repo = new ExpenseRepository(supabase);
