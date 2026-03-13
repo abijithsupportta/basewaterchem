@@ -8,17 +8,13 @@ import { getReminderConfig, shouldRunReminderNow, sendReminderWhatsAppBatch } fr
 
 function isAuthorizedCronRequest(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
 
-  // Vercel Cron Jobs do not send custom authorization headers.
-  if (isVercelCron) {
-    return true;
-  }
-
+  // If no secret is configured, only allow requests from Vercel Cron.
   if (!cronSecret) {
-    return true;
+    return request.headers.get('x-vercel-cron') === '1';
   }
 
+  // When a secret is configured, always validate it regardless of origin.
   const authHeader = request.headers.get('authorization');
   if (authHeader === `Bearer ${cronSecret}`) {
     return true;

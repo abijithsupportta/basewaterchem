@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { canCreateOrEdit, canDelete, type StaffRole } from '@/lib/authz';
 import { z } from 'zod';
 
 const productUpdateSchema = z.object({
@@ -55,6 +56,11 @@ export async function PATCH(
   try {
     const { id } = await params;
     const supabase = await createServerSupabaseClient();
+    const user = (await supabase.auth.getUser()).data.user;
+    const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
+    if (!canCreateOrEdit(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Insufficient permissions to update products.' }, { status: 403 });
+    }
     const body = await request.json();
 
     const validatedData = productUpdateSchema.parse(body);
@@ -102,6 +108,11 @@ export async function DELETE(
   try {
     const { id } = await params;
     const supabase = await createServerSupabaseClient();
+    const user = (await supabase.auth.getUser()).data.user;
+    const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
+    if (!canDelete(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Only superadmin can delete products.' }, { status: 403 });
+    }
 
     const { error } = await supabase
       .from('inventory_products')
@@ -128,6 +139,11 @@ export async function POST(
   try {
     const { id } = await params;
     const supabase = await createServerSupabaseClient();
+    const user = (await supabase.auth.getUser()).data.user;
+    const userRole = ((user?.user_metadata?.role as StaffRole | undefined) ?? 'staff');
+    if (!canCreateOrEdit(userRole)) {
+      return NextResponse.json({ error: 'Forbidden: Insufficient permissions to adjust stock.' }, { status: 403 });
+    }
     const body = await request.json();
 
     const { adjustment, notes } = stockAdjustmentSchema.parse(body);
