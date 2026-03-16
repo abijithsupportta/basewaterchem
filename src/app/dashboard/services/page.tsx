@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Wrench, Building2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -110,8 +109,6 @@ function getServiceFiltersFromUrl() {
 }
 
 export default function ServicesPage() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [search, setSearch] = useState(() => getServiceFiltersFromUrl().search);
   const [page, setPage] = useState(() => getServiceFiltersFromUrl().page);
   const [pageSize, setPageSize] = useState(() => getServiceFiltersFromUrl().pageSize);
@@ -141,9 +138,27 @@ export default function ServicesPage() {
   const hasInitializedPageReset = useRef(false);
 
   const currentListUrl = useMemo(() => {
-    const qs = searchParams.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
-  }, [pathname, searchParams]);
+    const params = new URLSearchParams();
+
+    const trimmedSearch = search.trim();
+    if (trimmedSearch) params.set('search', trimmedSearch);
+
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    if (timeFilter !== 'all') {
+      params.set('timeFilter', timeFilter);
+      if (timeFilter === 'custom') {
+        if (customFrom) params.set('from', customFrom);
+        if (customTo) params.set('to', customTo);
+      }
+    }
+    if (typeFilter !== 'all') params.set('type', typeFilter);
+
+    if (page > 1) params.set('page', String(page));
+    if (pageSize !== 20) params.set('pageSize', String(pageSize));
+
+    const qs = params.toString();
+    return qs ? `/dashboard/services?${qs}` : '/dashboard/services';
+  }, [search, statusFilter, timeFilter, typeFilter, customFrom, customTo, page, pageSize]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

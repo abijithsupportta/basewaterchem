@@ -17,6 +17,27 @@ Canonical timeline of production-impacting updates, organized by date.
 - Timestamp: 2026-03-16 21:12 IST (+05:30).
 - Fixed Next.js build failure in inventory product stock-adjustment API caused by duplicate `user` variable declaration.
 
+### Follow-up Hotfix: Preserve Exact Page on Back Navigation
+
+- Timestamp: 2026-03-16 21:28 IST (+05:30).
+- Fixed remaining issue where opening an invoice/service from page 3+ could still return users to first-page list due to stale `returnTo` link generation.
+- Root cause: `returnTo` URL was built from router search snapshots that can lag behind current list state.
+- Fix: generate `returnTo` from current in-memory list state (search + filters + page + pageSize) so links always carry the exact active page context.
+
+### Files Changed (Follow-up Hotfix)
+
+- `src/app/dashboard/invoices/page.tsx`
+- `src/app/dashboard/services/page.tsx`
+
+### Verification (Follow-up Hotfix)
+
+- Type diagnostics: no errors in changed files.
+- Production build succeeded: `npm run build`.
+
+### Issues Found During Follow-up Hotfix
+
+- None.
+
 ### Files Changed
 
 - `src/app/dashboard/invoices/page.tsx`

@@ -10,13 +10,14 @@ Professional project documentation for Base Water Chemicals.
 
 ### Latest Completed Work (2026-03-16)
 
-- Timestamp: 2026-03-16 21:12 IST (+05:30)
+- Timestamp: 2026-03-16 21:28 IST (+05:30)
 - Scope: Fixed invoice/service list search reliability, list return-state pagination, and one build failure.
 - Summary:
    - Corrected inconsistent search behavior for customer name/phone and invoice/service numbers.
    - Enforced case-insensitive customer matching (uppercase/lowercase input now behaves the same).
    - Fixed stale-result behavior during fast typing by ensuring latest request response wins.
    - Preserved invoice/service list section when returning from detail pages (page and filters now restore from URL).
+   - Added follow-up hotfix so return links always carry the exact active page/filter state (prevents fallback to first page from page 3+).
    - Fixed a compile-time duplicate variable error in inventory product stock adjustment API.
    - Verified successful production build and pushed changes to GitHub `main`.
 

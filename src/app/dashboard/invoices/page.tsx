@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Receipt, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -102,8 +102,6 @@ function getInvoiceFiltersFromUrl(): {
 
 export default function InvoicesPage() {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const userRole = useUserRole();
   const [page, setPage] = useState(() => getInvoiceFiltersFromUrl().page);
   const [pageSize, setPageSize] = useState(() => getInvoiceFiltersFromUrl().pageSize);
@@ -118,9 +116,28 @@ export default function InvoicesPage() {
   const hasInitializedPageReset = useRef(false);
 
   const currentListUrl = useMemo(() => {
-    const qs = searchParams.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
-  }, [pathname, searchParams]);
+    const params = new URLSearchParams();
+
+    const trimmedSearch = search.trim();
+    if (trimmedSearch) params.set('search', trimmedSearch);
+
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    if (sortBy !== 'invoice_date_desc') params.set('sort', sortBy);
+
+    if (dateFilter !== 'all') {
+      params.set('dateFilter', dateFilter);
+      if (dateFilter === 'custom') {
+        if (customStartDate) params.set('dateFrom', customStartDate);
+        if (customEndDate) params.set('dateTo', customEndDate);
+      }
+    }
+
+    if (page > 1) params.set('page', String(page));
+    if (pageSize !== 20) params.set('pageSize', String(pageSize));
+
+    const qs = params.toString();
+    return qs ? `/dashboard/invoices?${qs}` : '/dashboard/invoices';
+  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, page, pageSize]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
