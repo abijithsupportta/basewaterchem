@@ -39,6 +39,7 @@ export function useServices(filters?: {
     key: string;
     promise: Promise<{ data: ServiceWithDetails[]; count: number }>;
   } | null>(null);
+  const latestRequestIdRef = useRef(0);
   const cacheKey = useMemo(
     () =>
       `dashboard:services:list:v1:${JSON.stringify({
@@ -68,14 +69,18 @@ export function useServices(filters?: {
   );
 
   const fetchServices = useCallback(async () => {
+    const requestId = ++latestRequestIdRef.current;
+
     try {
       const cached = readStaleCache<ServicesCachePayload>(cacheKey, SERVICES_CACHE_TTL_MS);
 
       if (cached) {
+        if (requestId !== latestRequestIdRef.current) return;
         setServices(cached.services);
         setTotalCount(cached.totalCount);
         setLoading(false);
       } else {
+        if (requestId !== latestRequestIdRef.current) return;
         setLoading(true);
       }
 
@@ -104,6 +109,7 @@ export function useServices(filters?: {
 
       if (inFlightRef.current?.key === requestKey) {
         const pending = await inFlightRef.current.promise;
+        if (requestId !== latestRequestIdRef.current) return;
         setServices(pending.data);
         setTotalCount(pending.count);
         setError(null);
@@ -126,6 +132,8 @@ export function useServices(filters?: {
       inFlightRef.current = { key: requestKey, promise };
 
       const { data, count } = await promise;
+      if (requestId !== latestRequestIdRef.current) return;
+
       setServices(data);
       setTotalCount(count);
       writeStaleCache<ServicesCachePayload>(cacheKey, { services: data, totalCount: count });
@@ -135,8 +143,10 @@ export function useServices(filters?: {
         inFlightRef.current = null;
       }
     } catch (err: unknown) {
+      if (requestId !== latestRequestIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to fetch services');
     } finally {
+      if (requestId !== latestRequestIdRef.current) return;
       setLoading(false);
     }
   }, [

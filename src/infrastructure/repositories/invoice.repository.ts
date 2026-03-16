@@ -18,8 +18,36 @@ const INVOICE_LIST_SELECT = `
   branch:branches (id, branch_name, branch_code)
 `;
 
+function escapeIlikePattern(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/[%_]/g, '\\$&')
+    .replace(/,/g, '\\,')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
 export class InvoiceRepository {
   constructor(private readonly db: SupabaseClient) {}
+
+  private async findMatchingCustomerIds(searchTerm: string): Promise<string[]> {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) return [];
+
+    const escaped = escapeIlikePattern(trimmed);
+    const textPattern = `%${escaped}%`;
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    const phonePattern = digitsOnly ? `%${digitsOnly}%` : textPattern;
+
+    const { data, error } = await this.db
+      .from('customers')
+      .select('id')
+      .or(`full_name.ilike.${textPattern},customer_code.ilike.${textPattern},phone.ilike.${phonePattern}`)
+      .limit(2000);
+
+    if (error) throw new DatabaseError(error.message);
+    return (data || []).map((row: any) => String(row.id));
+  }
 
   private applySort(
     query: any,
@@ -90,11 +118,21 @@ export class InvoiceRepository {
     if (filters?.branchId && filters.branchId !== 'all') query = query.eq('branch_id', filters.branchId);
     if (filters?.dateFrom) query = query.gte('invoice_date', filters.dateFrom);
     if (filters?.dateTo) query = query.lte('invoice_date', filters.dateTo);
-    if (filters?.search) {
-      const q = filters.search.replace(/%/g, '\\%');
-      query = query.or(
-        `invoice_number.ilike.%${q}%,customer.full_name.ilike.%${q}%,customer.customer_code.ilike.%${q}%`
-      );
+    if (filters?.search?.trim()) {
+      const searchTerm = filters.search.trim();
+      const q = escapeIlikePattern(searchTerm);
+      const pattern = `%${q}%`;
+      const customerIds = await this.findMatchingCustomerIds(searchTerm);
+
+      if (customerIds.length > 0) {
+        const encodedCustomerIds = customerIds
+          .map((id) => `"${id.replace(/"/g, '')}"`)
+          .join(',');
+
+        query = query.or(`invoice_number.ilike.${pattern},customer_id.in.(${encodedCustomerIds})`);
+      } else {
+        query = query.ilike('invoice_number', pattern);
+      }
     }
     
     if (filters?.limit && filters?.offset !== undefined) {

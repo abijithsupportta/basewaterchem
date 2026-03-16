@@ -2,6 +2,56 @@
 
 Canonical timeline of production-impacting updates, organized by date.
 
+## 2026-03-16
+
+### Invoice and Service Search Reliability Hardening
+
+- Timestamp: 2026-03-16 20:10 IST (+05:30).
+- Fixed inconsistent search behavior on invoice and service list pages for staff/superadmin when typing quickly.
+- Root cause 1: Search OR filters mixed base-table and joined customer fields in a single expression, which can produce unreliable related-table matching.
+- Root cause 2: In-flight request race condition allowed older, slower responses to overwrite newer search results.
+
+### Files Changed
+
+- `src/infrastructure/repositories/invoice.repository.ts`
+- `src/infrastructure/repositories/service.repository.ts`
+- `src/hooks/use-invoices.ts`
+- `src/hooks/use-services.ts`
+
+### Validation and Verification
+
+- Search now supports identifier and customer fields reliably:
+	- Invoices: invoice number, customer name, customer code, customer phone.
+	- Services: service number, customer name, customer code, customer phone.
+- Added request sequencing guard in list hooks so only the latest typed search result can update UI state.
+
+### Issues Found During Work
+
+- None.
+
+### Follow-up Fix: Customer Name/Phone Search (Case-Insensitive)
+
+- Timestamp: 2026-03-16 20:34 IST (+05:30).
+- Addressed remaining bug where typing customer name/phone (including lowercase input for capitalized names) did not reliably return invoices/services.
+- Replaced joined-table OR filtering in invoice/service repositories with a deterministic two-step approach:
+	- Find matching customers by `full_name`, `customer_code`, `phone` (ILIKE, case-insensitive).
+	- Filter invoices/services using `customer_id.in(...)` OR invoice/service number match on base table.
+- This avoids PostgREST embedded relation OR edge-cases and ensures consistent behavior for staff/superadmin.
+
+### Files Changed (Follow-up)
+
+- `src/infrastructure/repositories/invoice.repository.ts`
+- `src/infrastructure/repositories/service.repository.ts`
+
+### Verification (Follow-up)
+
+- Type diagnostics: no errors in changed files.
+- Expected behavior: lowercase/uppercase customer name input and phone input now return related invoices/services.
+
+### Issues Found During Follow-up Work
+
+- None.
+
 ## 2026-03-12
 
 ### Dashboard Pending Payments and Invoice Drill-Down

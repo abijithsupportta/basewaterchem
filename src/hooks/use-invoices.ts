@@ -37,6 +37,7 @@ export function useInvoices(filters?: {
     key: string;
     promise: Promise<{ data: InvoiceWithDetails[]; count: number }>;
   } | null>(null);
+  const latestRequestIdRef = useRef(0);
   const cacheKey = useMemo(
     () =>
       `dashboard:invoices:list:v1:${JSON.stringify({
@@ -64,14 +65,18 @@ export function useInvoices(filters?: {
   );
 
   const fetchInvoices = useCallback(async () => {
+    const requestId = ++latestRequestIdRef.current;
+
     try {
       const cached = readStaleCache<InvoicesCachePayload>(cacheKey, INVOICES_CACHE_TTL_MS);
 
       if (cached) {
+        if (requestId !== latestRequestIdRef.current) return;
         setInvoices(cached.invoices);
         setTotalCount(cached.totalCount);
         setLoading(false);
       } else {
+        if (requestId !== latestRequestIdRef.current) return;
         setLoading(true);
       }
 
@@ -99,6 +104,7 @@ export function useInvoices(filters?: {
 
       if (inFlightRef.current?.key === requestKey) {
         const pending = await inFlightRef.current.promise;
+        if (requestId !== latestRequestIdRef.current) return;
         setInvoices(pending.data);
         setTotalCount(pending.count);
         setError(null);
@@ -120,6 +126,8 @@ export function useInvoices(filters?: {
       inFlightRef.current = { key: requestKey, promise };
 
       const { data, count } = await promise;
+      if (requestId !== latestRequestIdRef.current) return;
+
       setInvoices(data);
       setTotalCount(count);
       writeStaleCache<InvoicesCachePayload>(cacheKey, { invoices: data, totalCount: count });
@@ -129,8 +137,10 @@ export function useInvoices(filters?: {
         inFlightRef.current = null;
       }
     } catch (err: unknown) {
+      if (requestId !== latestRequestIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to fetch invoices');
     } finally {
+      if (requestId !== latestRequestIdRef.current) return;
       setLoading(false);
     }
   }, [

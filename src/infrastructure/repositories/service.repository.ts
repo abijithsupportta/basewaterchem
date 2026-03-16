@@ -26,8 +26,36 @@ const SERVICE_DETAIL_SELECT = `
   amc_contract:amc_contracts (*)
 `;
 
+function escapeIlikePattern(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/[%_]/g, '\\$&')
+    .replace(/,/g, '\\,')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
 export class ServiceRepository {
   constructor(private readonly db: SupabaseClient) {}
+
+  private async findMatchingCustomerIds(searchTerm: string): Promise<string[]> {
+    const trimmed = searchTerm.trim();
+    if (!trimmed) return [];
+
+    const escaped = escapeIlikePattern(trimmed);
+    const textPattern = `%${escaped}%`;
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    const phonePattern = digitsOnly ? `%${digitsOnly}%` : textPattern;
+
+    const { data, error } = await this.db
+      .from('customers')
+      .select('id')
+      .or(`full_name.ilike.${textPattern},customer_code.ilike.${textPattern},phone.ilike.${phonePattern}`)
+      .limit(2000);
+
+    if (error) throw new DatabaseError(error.message);
+    return (data || []).map((row: any) => String(row.id));
+  }
 
   async findAll(filters?: {
     status?: string;
@@ -64,11 +92,21 @@ export class ServiceRepository {
         .not('free_service_valid_until', 'is', null)
         .gte('free_service_valid_until', todayStr);
     }
-    if (filters?.search) {
-      const q = filters.search.replace(/%/g, '\\%');
-      query = query.or(
-        `service_number.ilike.%${q}%,customer.full_name.ilike.%${q}%,customer.customer_code.ilike.%${q}%,customer.phone.ilike.%${q}%`
-      );
+    if (filters?.search?.trim()) {
+      const searchTerm = filters.search.trim();
+      const q = escapeIlikePattern(searchTerm);
+      const pattern = `%${q}%`;
+      const customerIds = await this.findMatchingCustomerIds(searchTerm);
+
+      if (customerIds.length > 0) {
+        const encodedCustomerIds = customerIds
+          .map((id) => `"${id.replace(/"/g, '')}"`)
+          .join(',');
+
+        query = query.or(`service_number.ilike.${pattern},customer_id.in.(${encodedCustomerIds})`);
+      } else {
+        query = query.ilike('service_number', pattern);
+      }
     }
     if (filters?.offset !== undefined && filters?.limit !== undefined) {
       query = query.range(filters.offset, filters.offset + filters.limit - 1);
