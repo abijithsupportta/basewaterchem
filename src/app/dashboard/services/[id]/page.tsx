@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, Calendar, Clock, Download, Loader2, Plus, Trash2, Package } from 'lucide-react';
 import { toast } from 'sonner';
@@ -43,6 +43,7 @@ function isAutoCreatedService(service: any): boolean {
 export default function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const userRole = useUserRole();
   const [service, setService] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,15 @@ export default function ServiceDetailPage() {
   const [rescheduleTimeSlot, setRescheduleTimeSlot] = useState('');
   const [rescheduling, setRescheduling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const returnTo = searchParams.get('returnTo');
+  const goBackToList = () => {
+    if (returnTo && returnTo.startsWith('/dashboard/services')) {
+      router.push(returnTo);
+      return;
+    }
+    router.push('/dashboard/services');
+  };
 
   // Completion form state
   const [workDone, setWorkDone] = useState('');
@@ -494,7 +504,7 @@ export default function ServiceDetailPage() {
       const { error } = await supabase.from('services').delete().eq('id', id);
       if (error) throw error;
       toast.success('Service deleted');
-      router.push('/dashboard/services');
+      goBackToList();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete service');
     } finally {
@@ -507,7 +517,7 @@ export default function ServiceDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-muted-foreground mb-4">Service not found</p>
-        <Button variant="outline" onClick={() => router.push('/dashboard/services')}>Back to Services</Button>
+        <Button variant="outline" onClick={goBackToList}>Back to Services</Button>
       </div>
     );
   }
@@ -519,7 +529,7 @@ export default function ServiceDetailPage() {
       <Breadcrumb />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={goBackToList}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-2xl font-bold">{service.service_number}</h1>
             <p className="text-muted-foreground">

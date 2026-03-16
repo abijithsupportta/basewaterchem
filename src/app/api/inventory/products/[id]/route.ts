@@ -148,10 +148,6 @@ export async function POST(
 
     const { adjustment, notes } = stockAdjustmentSchema.parse(body);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
     // Get staff ID from auth user ID
     let staffId: string | null = null;
     if (user) {

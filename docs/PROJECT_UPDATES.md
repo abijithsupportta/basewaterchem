@@ -4,6 +4,36 @@ Canonical timeline of production-impacting updates, organized by date.
 
 ## 2026-03-16
 
+### List Pagination Return-State Fix (Invoices and Services)
+
+- Timestamp: 2026-03-16 21:05 IST (+05:30).
+- Fixed list reset issue where opening an item from page 2+ and returning would drop users back to page 1.
+- Implemented URL-backed list state for invoice and service pages (`page`, `pageSize`, and active filters).
+- Added safe `returnTo` navigation wiring from list -> detail so back actions preserve the exact list context.
+- Prevented mount-time page reset that previously overrode restored URL page state.
+
+### Build Error Resolution
+
+- Timestamp: 2026-03-16 21:12 IST (+05:30).
+- Fixed Next.js build failure in inventory product stock-adjustment API caused by duplicate `user` variable declaration.
+
+### Files Changed
+
+- `src/app/dashboard/invoices/page.tsx`
+- `src/app/dashboard/services/page.tsx`
+- `src/app/dashboard/invoices/[id]/page.tsx`
+- `src/app/dashboard/services/[id]/page.tsx`
+- `src/app/api/inventory/products/[id]/route.ts`
+
+### Validation and Verification
+
+- Type diagnostics: no errors in changed files.
+- Production build succeeded: `npm run build`.
+
+### Issues Found During Work
+
+- Found and resolved one unrelated compile-time issue (duplicate variable in inventory product API route).
+
 ### Invoice and Service Search Reliability Hardening
 
 - Timestamp: 2026-03-16 20:10 IST (+05:30).

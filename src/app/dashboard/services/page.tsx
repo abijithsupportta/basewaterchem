@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Wrench, Building2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -68,15 +69,57 @@ function getDateAfterDays(daysAhead: number): string {
   return d.toISOString().split('T')[0];
 }
 
+function parsePositiveInt(value: string | null, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parsePageSize(value: string | null, fallback: number): number {
+  const parsed = parsePositiveInt(value, fallback);
+  return [20, 50, 100].includes(parsed) ? parsed : fallback;
+}
+
+function getServiceFiltersFromUrl() {
+  if (typeof window === 'undefined') {
+    return {
+      search: '',
+      page: 1,
+      pageSize: 20,
+      statusFilter: 'all',
+      timeFilter: 'all',
+      typeFilter: 'all',
+      customFrom: '',
+      customTo: '',
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const timeFilter = params.get('timeFilter') || 'all';
+
+  return {
+    search: params.get('search') || '',
+    page: parsePositiveInt(params.get('page'), 1),
+    pageSize: parsePageSize(params.get('pageSize'), 20),
+    statusFilter: params.get('status') || 'all',
+    timeFilter,
+    typeFilter: params.get('type') || 'all',
+    customFrom: timeFilter === 'custom' ? (params.get('from') || '') : '',
+    customTo: timeFilter === 'custom' ? (params.get('to') || '') : '',
+  };
+}
+
 export default function ServicesPage() {
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [timeFilter, setTimeFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(() => getServiceFiltersFromUrl().search);
+  const [page, setPage] = useState(() => getServiceFiltersFromUrl().page);
+  const [pageSize, setPageSize] = useState(() => getServiceFiltersFromUrl().pageSize);
+  const [statusFilter, setStatusFilter] = useState(() => getServiceFiltersFromUrl().statusFilter);
+  const [timeFilter, setTimeFilter] = useState(() => getServiceFiltersFromUrl().timeFilter);
+  const [typeFilter, setTypeFilter] = useState(() => getServiceFiltersFromUrl().typeFilter);
+  const [customFrom, setCustomFrom] = useState(() => getServiceFiltersFromUrl().customFrom);
+  const [customTo, setCustomTo] = useState(() => getServiceFiltersFromUrl().customTo);
   const [showNotificationDialog, setShowNotificationDialog] = useState(false);
   const [notificationDate, setNotificationDate] = useState(getDateAfterDays(7));
   const [notificationCount, setNotificationCount] = useState(0);
@@ -95,6 +138,109 @@ export default function ServicesPage() {
     sent: number;
     failed: number;
   } | null>(null);
+  const hasInitializedPageReset = useRef(false);
+
+  const currentListUrl = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncFromUrl = () => {
+      const next = getServiceFiltersFromUrl();
+      setSearch((prev) => (prev === next.search ? prev : next.search));
+      setPage((prev) => (prev === next.page ? prev : next.page));
+      setPageSize((prev) => (prev === next.pageSize ? prev : next.pageSize));
+      setStatusFilter((prev) => (prev === next.statusFilter ? prev : next.statusFilter));
+      setTimeFilter((prev) => (prev === next.timeFilter ? prev : next.timeFilter));
+      setTypeFilter((prev) => (prev === next.typeFilter ? prev : next.typeFilter));
+      setCustomFrom((prev) => (prev === next.customFrom ? prev : next.customFrom));
+      setCustomTo((prev) => (prev === next.customTo ? prev : next.customTo));
+    };
+
+    const onPopState = () => {
+      syncFromUrl();
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+
+    if (!search.trim()) {
+      params.delete('search');
+    } else {
+      params.set('search', search.trim());
+    }
+
+    if (statusFilter === 'all') {
+      params.delete('status');
+    } else {
+      params.set('status', statusFilter);
+    }
+
+    if (timeFilter === 'all') {
+      params.delete('timeFilter');
+      params.delete('from');
+      params.delete('to');
+    } else {
+      params.set('timeFilter', timeFilter);
+      if (timeFilter === 'custom') {
+        if (customFrom) {
+          params.set('from', customFrom);
+        } else {
+          params.delete('from');
+        }
+        if (customTo) {
+          params.set('to', customTo);
+        } else {
+          params.delete('to');
+        }
+      } else {
+        params.delete('from');
+        params.delete('to');
+      }
+    }
+
+    if (typeFilter === 'all') {
+      params.delete('type');
+    } else {
+      params.set('type', typeFilter);
+    }
+
+    if (page <= 1) {
+      params.delete('page');
+    } else {
+      params.set('page', String(page));
+    }
+
+    if (pageSize === 20) {
+      params.delete('pageSize');
+    } else {
+      params.set('pageSize', String(pageSize));
+    }
+
+    const nextQuery = params.toString();
+    const currentQuery = new URLSearchParams(window.location.search).toString();
+    if (nextQuery === currentQuery) {
+      return;
+    }
+
+    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.replaceState({}, '', nextUrl);
+  }, [search, statusFilter, timeFilter, typeFilter, customFrom, customTo, page, pageSize]);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -199,6 +345,10 @@ export default function ServicesPage() {
   };
 
   useEffect(() => {
+    if (!hasInitializedPageReset.current) {
+      hasInitializedPageReset.current = true;
+      return;
+    }
     setPage(1);
   }, [search, statusFilter, typeFilter, timeFilter, customFrom, customTo, pageSize]);
 
@@ -312,7 +462,7 @@ export default function ServicesPage() {
       ) : (
         <div className="space-y-3">
           {sortedServices.map((service: any) => (
-            <Link key={service.id} href={`/dashboard/services/${service.id}`}>
+            <Link key={service.id} href={`/dashboard/services/${service.id}?returnTo=${encodeURIComponent(currentListUrl)}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex-1">

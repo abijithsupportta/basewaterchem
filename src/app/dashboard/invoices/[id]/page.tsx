@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, IndianRupee, Download, Pencil, Building2, Trash2 } from 'lucide-react';
 import { downloadInvoicePDF } from '@/lib/invoice-pdf';
@@ -23,6 +23,7 @@ import { isSuperadmin } from '@/lib/authz';
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,15 @@ export default function InvoiceDetailPage() {
   const [paymentCollectors, setPaymentCollectors] = useState<Record<string, string>>({});
   const [deleting, setDeleting] = useState(false);
   const userRole = useUserRole();
+
+  const returnTo = searchParams.get('returnTo');
+  const goBackToList = () => {
+    if (returnTo && returnTo.startsWith('/dashboard/invoices')) {
+      router.push(returnTo);
+      return;
+    }
+    router.push('/dashboard/invoices');
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -160,7 +170,7 @@ export default function InvoiceDetailPage() {
       const { error } = await supabase.from('invoices').delete().eq('id', id);
       if (error) throw error;
       toast.success('Invoice deleted');
-      router.push('/dashboard/invoices');
+      goBackToList();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete invoice');
     } finally {
@@ -173,7 +183,7 @@ export default function InvoiceDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-muted-foreground mb-4">Invoice not found</p>
-        <Button variant="outline" onClick={() => router.push('/dashboard/invoices')}>Back</Button>
+        <Button variant="outline" onClick={goBackToList}>Back</Button>
       </div>
     );
   }
@@ -191,7 +201,7 @@ export default function InvoiceDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/invoices')}><ArrowLeft className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={goBackToList}><ArrowLeft className="h-4 w-4" /></Button>
           <div>
             <h1 className="text-2xl font-bold">{invoice.invoice_number}</h1>
             <p className="text-muted-foreground">Invoice Date: {formatDate(invoice.invoice_date)}</p>

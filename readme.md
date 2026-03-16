@@ -8,6 +8,38 @@ Professional project documentation for Base Water Chemicals.
 
 - For dated implementation updates and release notes, see `docs/PROJECT_UPDATES.md`.
 
+### Latest Completed Work (2026-03-16)
+
+- Timestamp: 2026-03-16 21:12 IST (+05:30)
+- Scope: Fixed invoice/service list search reliability, list return-state pagination, and one build failure.
+- Summary:
+   - Corrected inconsistent search behavior for customer name/phone and invoice/service numbers.
+   - Enforced case-insensitive customer matching (uppercase/lowercase input now behaves the same).
+   - Fixed stale-result behavior during fast typing by ensuring latest request response wins.
+   - Preserved invoice/service list section when returning from detail pages (page and filters now restore from URL).
+   - Fixed a compile-time duplicate variable error in inventory product stock adjustment API.
+   - Verified successful production build and pushed changes to GitHub `main`.
+
+- Files changed:
+   - `src/infrastructure/repositories/invoice.repository.ts`
+   - `src/infrastructure/repositories/service.repository.ts`
+   - `src/hooks/use-invoices.ts`
+   - `src/hooks/use-services.ts`
+   - `src/app/dashboard/invoices/page.tsx`
+   - `src/app/dashboard/services/page.tsx`
+   - `src/app/dashboard/invoices/[id]/page.tsx`
+   - `src/app/dashboard/services/[id]/page.tsx`
+   - `src/app/api/inventory/products/[id]/route.ts`
+   - `docs/PROJECT_UPDATES.md`
+
+- Verification notes:
+   - `npm run build` completed successfully.
+   - Type diagnostics for changed files reported no errors.
+   - Git push completed successfully to `main`.
+
+- Mistakes/bugs/issues found during this work:
+   - None.
+
 ---
 
 ## Part A) Client-Facing Documentation

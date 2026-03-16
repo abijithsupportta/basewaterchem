@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Receipt, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,6 +46,17 @@ function isStatusFilter(value: string | null): value is InvoiceStatusFilter {
   return !!value && STATUS_FILTER_OPTIONS.includes(value as InvoiceStatusFilter);
 }
 
+function parsePositiveInt(value: string | null, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parsePageSize(value: string | null, fallback: number): number {
+  const parsed = parsePositiveInt(value, fallback);
+  return [20, 50, 100].includes(parsed) ? parsed : fallback;
+}
+
 function getInvoiceFiltersFromUrl(): {
   search: string;
   status: InvoiceStatusFilter;
@@ -53,6 +64,8 @@ function getInvoiceFiltersFromUrl(): {
   dateFilter: DateFilter;
   customStartDate: string;
   customEndDate: string;
+  page: number;
+  pageSize: number;
 } {
   if (typeof window === 'undefined') {
     return {
@@ -62,6 +75,8 @@ function getInvoiceFiltersFromUrl(): {
       dateFilter: 'all',
       customStartDate: '',
       customEndDate: '',
+      page: 1,
+      pageSize: 20,
     };
   }
 
@@ -80,14 +95,18 @@ function getInvoiceFiltersFromUrl(): {
     dateFilter: resolvedDateFilter,
     customStartDate,
     customEndDate,
+    page: parsePositiveInt(params.get('page'), 1),
+    pageSize: parsePageSize(params.get('pageSize'), 20),
   };
 }
 
 export default function InvoicesPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const userRole = useUserRole();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(() => getInvoiceFiltersFromUrl().page);
+  const [pageSize, setPageSize] = useState(() => getInvoiceFiltersFromUrl().pageSize);
   const [search, setSearch] = useState(() => getInvoiceFiltersFromUrl().search);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>(() => getInvoiceFiltersFromUrl().status);
   const [sortBy, setSortBy] = useState<InvoiceSortBy>(() => getInvoiceFiltersFromUrl().sortBy);
@@ -96,6 +115,12 @@ export default function InvoicesPage() {
   const [customEndDate, setCustomEndDate] = useState(() => getInvoiceFiltersFromUrl().customEndDate);
   const [latestCollectors, setLatestCollectors] = useState<Record<string, string>>({});
   const [latestCollectionAt, setLatestCollectionAt] = useState<Record<string, string>>({});
+  const hasInitializedPageReset = useRef(false);
+
+  const currentListUrl = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -110,6 +135,8 @@ export default function InvoicesPage() {
       setDateFilter((prev) => (prev === next.dateFilter ? prev : next.dateFilter));
       setCustomStartDate((prev) => (prev === next.customStartDate ? prev : next.customStartDate));
       setCustomEndDate((prev) => (prev === next.customEndDate ? prev : next.customEndDate));
+      setPage((prev) => (prev === next.page ? prev : next.page));
+      setPageSize((prev) => (prev === next.pageSize ? prev : next.pageSize));
     };
 
     const onPopState = () => {
@@ -169,6 +196,18 @@ export default function InvoicesPage() {
       }
     }
 
+    if (page <= 1) {
+      params.delete('page');
+    } else {
+      params.set('page', String(page));
+    }
+
+    if (pageSize === 20) {
+      params.delete('pageSize');
+    } else {
+      params.set('pageSize', String(pageSize));
+    }
+
     const nextQuery = params.toString();
     const currentQuery = new URLSearchParams(window.location.search).toString();
     if (nextQuery === currentQuery) {
@@ -177,7 +216,8 @@ export default function InvoicesPage() {
 
     const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
     window.history.replaceState({}, '', nextUrl);
-  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate]);
+
+  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, page, pageSize]);
 
   // Prevent technicians from accessing invoices
   useEffect(() => {
@@ -187,6 +227,10 @@ export default function InvoicesPage() {
   }, [userRole, router]);
 
   useEffect(() => {
+    if (!hasInitializedPageReset.current) {
+      hasInitializedPageReset.current = true;
+      return;
+    }
     setPage(1);
   }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, pageSize]);
 
@@ -458,7 +502,7 @@ export default function InvoicesPage() {
       ) : (
         <div className="space-y-3">
           {invoices.map((inv: any) => (
-            <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`}>
+            <Link key={inv.id} href={`/dashboard/invoices/${inv.id}?returnTo=${encodeURIComponent(currentListUrl)}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex-1">
