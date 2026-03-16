@@ -135,14 +135,14 @@ export default function InvoicesPage() {
     const nextPage = typeof newPage === 'function' ? newPage(page) : newPage;
     const params = new URLSearchParams(searchParams.toString());
     if (nextPage <= 1) params.delete('page'); else params.set('page', String(nextPage));
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   const setPageSize = (size: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('pageSize', String(size));
     params.delete('page');
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   // returnTo URL for invoice detail links
@@ -414,13 +414,16 @@ export default function InvoicesPage() {
         </select>
       </div>
 
-      {loading ? <Loading /> : invoices.length === 0 ? (
+      {loading && invoices.length === 0 ? <Loading /> : invoices.length === 0 ? (
         <Card><CardContent className="flex flex-col items-center justify-center py-12">
           <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">No invoices found</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
+          {loading && (
+            <p className="text-xs text-muted-foreground">Updating invoices...</p>
+          )}
           {invoices.map((inv: any) => (
             <Link key={inv.id} href={`/dashboard/invoices/${inv.id}?returnTo=${encodeURIComponent(currentListUrl)}`}>
               <Card className="hover:shadow-md transition-shadow cursor-pointer">

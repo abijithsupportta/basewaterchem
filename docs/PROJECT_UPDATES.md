@@ -3,6 +3,28 @@
 Canonical timeline of production-impacting updates, organized by date.
 
 ## 2026-03-16
+
+### Invoice Pagination UX Fix (No Full-Page Reload Feel)
+
+- Timestamp: 2026-03-16 17:57 IST (+05:30).
+- Fixed invoice list pagination UX so changing page/page-size does not feel like a full page reload.
+- Added `router.push(..., { scroll: false })` for invoice page and page-size transitions.
+- Changed loading behavior to keep existing list visible during refetch; full-page loader now appears only on initial empty load.
+- Added in-list progress hint: `Updating invoices...` while new page data is loading.
+
+### Files Changed
+
+- `src/app/dashboard/invoices/page.tsx`
+- `docs/PROJECT_UPDATES.md`
+
+### Verification
+
+- Type diagnostics: no errors in changed file.
+
+### Issues Found During Work
+
+- None.
+
 ## 2026-03-17
 
 ### URL-Based State Refactor — All List Pages
