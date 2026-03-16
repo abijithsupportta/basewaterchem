@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Download, Loader2, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -79,10 +80,49 @@ function getDateRange(period: string): { from?: string; to?: string } {
 export default function DayBookPage() {
   const userRole = useUserRole();
   const canManageExpenses = canCreateOrEdit(userRole as any);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const [timeFilter, setTimeFilter] = useState('today');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const timeFilter = searchParams.get('timeFilter') ?? 'today';
+  const customFrom = searchParams.get('from') ?? '';
+  const customTo = searchParams.get('to') ?? '';
+  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1);
+  const pageSize = [20, 50, 100].includes(parseInt(searchParams.get('pageSize') ?? '20'))
+    ? parseInt(searchParams.get('pageSize')!)
+    : 20;
+
+  const setTimeFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('timeFilter', value);
+    params.delete('from');
+    params.delete('to');
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  const setCustomRange = (from: string, to: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('timeFilter', 'custom');
+    if (from) params.set('from', from); else params.delete('from');
+    if (to) params.set('to', to); else params.delete('to');
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  const setPage = (newPage: number | ((p: number) => number)) => {
+    const nextPage = typeof newPage === 'function' ? newPage(page) : newPage;
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextPage <= 1) params.delete('page'); else params.set('page', String(nextPage));
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  const setPageSize = (size: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('pageSize', String(size));
+    params.set('page', '1');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
   const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [summary, setSummary] = useState({
@@ -98,9 +138,6 @@ export default function DayBookPage() {
     totalExpenses: 0,
   });
   const [cappedFrom, setCappedFrom] = useState<string | null>(null);
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
 
   const [loading, setLoading] = useState(true);
@@ -123,10 +160,6 @@ export default function DayBookPage() {
     }
     return getDateRange(timeFilter);
   }, [timeFilter, customFrom, customTo]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [timeFilter, customFrom, customTo, pageSize]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -391,7 +424,7 @@ export default function DayBookPage() {
           <DateRangePicker
             from={customFrom}
             to={customTo}
-            onChange={(from, to) => { setCustomFrom(from); setCustomTo(to); }}
+            onChange={(from, to) => setCustomRange(from, to)}
           />
         )}
       </div>

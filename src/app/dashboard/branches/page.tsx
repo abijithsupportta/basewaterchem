@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useDebouncedCallback } from 'use-debounce';
 import { Plus, Building2, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,11 +20,24 @@ import { canManageBranches, canDelete } from '@/lib/authz';
 
 export default function BranchesPage() {
   const userRole = useUserRole();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.get('q') ?? '';
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+
+  const handleSearch = useDebouncedCallback((term: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (term.trim()) {
+      params.set('q', term.trim());
+    } else {
+      params.delete('q');
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  }, 300);
 
   useEffect(() => {
     if (!canManageBranches(userRole)) {
@@ -128,7 +143,7 @@ export default function BranchesPage() {
         </Button>
       </div>
 
-      <SearchBar value={search} onChange={setSearch} placeholder="Search branches..." />
+      <SearchBar value={search} onChange={handleSearch} placeholder="Search branches..." />
 
       {loading ? (
         <Loading />

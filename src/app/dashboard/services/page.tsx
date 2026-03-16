@@ -1,6 +1,8 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useDebouncedCallback } from 'use-debounce';
 import Link from 'next/link';
 import { Plus, Wrench, Building2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -79,44 +81,22 @@ function parsePageSize(value: string | null, fallback: number): number {
   return [20, 50, 100].includes(parsed) ? parsed : fallback;
 }
 
-function getServiceFiltersFromUrl() {
-  if (typeof window === 'undefined') {
-    return {
-      search: '',
-      page: 1,
-      pageSize: 20,
-      statusFilter: 'all',
-      timeFilter: 'all',
-      typeFilter: 'all',
-      customFrom: '',
-      customTo: '',
-    };
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  const timeFilter = params.get('timeFilter') || 'all';
-
-  return {
-    search: params.get('search') || '',
-    page: parsePositiveInt(params.get('page'), 1),
-    pageSize: parsePageSize(params.get('pageSize'), 20),
-    statusFilter: params.get('status') || 'all',
-    timeFilter,
-    typeFilter: params.get('type') || 'all',
-    customFrom: timeFilter === 'custom' ? (params.get('from') || '') : '',
-    customTo: timeFilter === 'custom' ? (params.get('to') || '') : '',
-  };
-}
-
 export default function ServicesPage() {
-  const [search, setSearch] = useState(() => getServiceFiltersFromUrl().search);
-  const [page, setPage] = useState(() => getServiceFiltersFromUrl().page);
-  const [pageSize, setPageSize] = useState(() => getServiceFiltersFromUrl().pageSize);
-  const [statusFilter, setStatusFilter] = useState(() => getServiceFiltersFromUrl().statusFilter);
-  const [timeFilter, setTimeFilter] = useState(() => getServiceFiltersFromUrl().timeFilter);
-  const [typeFilter, setTypeFilter] = useState(() => getServiceFiltersFromUrl().typeFilter);
-  const [customFrom, setCustomFrom] = useState(() => getServiceFiltersFromUrl().customFrom);
-  const [customTo, setCustomTo] = useState(() => getServiceFiltersFromUrl().customTo);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // URL-based filter state
+  const search = searchParams.get('search') ?? '';
+  const page = parsePositiveInt(searchParams.get('page'), 1);
+  const pageSize = parsePageSize(searchParams.get('pageSize'), 20);
+  const statusFilter = searchParams.get('status') ?? 'all';
+  const timeFilter = searchParams.get('timeFilter') ?? 'all';
+  const typeFilter = searchParams.get('type') ?? 'all';
+  const customFrom = timeFilter === 'custom' ? (searchParams.get('from') ?? '') : '';
+  const customTo = timeFilter === 'custom' ? (searchParams.get('to') ?? '') : '';
+
+  // Non-URL state
   const [showNotificationDialog, setShowNotificationDialog] = useState(false);
   const [notificationDate, setNotificationDate] = useState(getDateAfterDays(7));
   const [notificationCount, setNotificationCount] = useState(0);
@@ -135,127 +115,74 @@ export default function ServicesPage() {
     sent: number;
     failed: number;
   } | null>(null);
-  const hasInitializedPageReset = useRef(false);
 
-  const currentListUrl = useMemo(() => {
-    const params = new URLSearchParams();
+  // URL setter helpers
+  const handleSearch = useDebouncedCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value.trim()) params.set('search', value.trim()); else params.delete('search');
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  }, 300);
 
-    const trimmedSearch = search.trim();
-    if (trimmedSearch) params.set('search', trimmedSearch);
+  const setStatusFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') params.delete('status'); else params.set('status', value);
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (statusFilter !== 'all') params.set('status', statusFilter);
-    if (timeFilter !== 'all') {
-      params.set('timeFilter', timeFilter);
-      if (timeFilter === 'custom') {
-        if (customFrom) params.set('from', customFrom);
-        if (customTo) params.set('to', customTo);
-      }
-    }
-    if (typeFilter !== 'all') params.set('type', typeFilter);
-
-    if (page > 1) params.set('page', String(page));
-    if (pageSize !== 20) params.set('pageSize', String(pageSize));
-
-    const qs = params.toString();
-    return qs ? `/dashboard/services?${qs}` : '/dashboard/services';
-  }, [search, statusFilter, timeFilter, typeFilter, customFrom, customTo, page, pageSize]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const syncFromUrl = () => {
-      const next = getServiceFiltersFromUrl();
-      setSearch((prev) => (prev === next.search ? prev : next.search));
-      setPage((prev) => (prev === next.page ? prev : next.page));
-      setPageSize((prev) => (prev === next.pageSize ? prev : next.pageSize));
-      setStatusFilter((prev) => (prev === next.statusFilter ? prev : next.statusFilter));
-      setTimeFilter((prev) => (prev === next.timeFilter ? prev : next.timeFilter));
-      setTypeFilter((prev) => (prev === next.typeFilter ? prev : next.typeFilter));
-      setCustomFrom((prev) => (prev === next.customFrom ? prev : next.customFrom));
-      setCustomTo((prev) => (prev === next.customTo ? prev : next.customTo));
-    };
-
-    const onPopState = () => {
-      syncFromUrl();
-    };
-
-    window.addEventListener('popstate', onPopState);
-    return () => {
-      window.removeEventListener('popstate', onPopState);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-
-    if (!search.trim()) {
-      params.delete('search');
-    } else {
-      params.set('search', search.trim());
-    }
-
-    if (statusFilter === 'all') {
-      params.delete('status');
-    } else {
-      params.set('status', statusFilter);
-    }
-
-    if (timeFilter === 'all') {
+  const setTimeFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') {
       params.delete('timeFilter');
       params.delete('from');
       params.delete('to');
     } else {
-      params.set('timeFilter', timeFilter);
-      if (timeFilter === 'custom') {
-        if (customFrom) {
-          params.set('from', customFrom);
-        } else {
-          params.delete('from');
-        }
-        if (customTo) {
-          params.set('to', customTo);
-        } else {
-          params.delete('to');
-        }
-      } else {
+      params.set('timeFilter', value);
+      if (value !== 'custom') {
         params.delete('from');
         params.delete('to');
       }
     }
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (typeFilter === 'all') {
-      params.delete('type');
-    } else {
-      params.set('type', typeFilter);
-    }
+  const setCustomRange = (from: string, to: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('timeFilter', 'custom');
+    if (from) params.set('from', from); else params.delete('from');
+    if (to) params.set('to', to); else params.delete('to');
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (page <= 1) {
-      params.delete('page');
-    } else {
-      params.set('page', String(page));
-    }
+  const setTypeFilter = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') params.delete('type'); else params.set('type', value);
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (pageSize === 20) {
-      params.delete('pageSize');
-    } else {
-      params.set('pageSize', String(pageSize));
-    }
+  const setPage = (newPage: number | ((p: number) => number)) => {
+    const nextPage = typeof newPage === 'function' ? newPage(page) : newPage;
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextPage <= 1) params.delete('page'); else params.set('page', String(nextPage));
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    const nextQuery = params.toString();
-    const currentQuery = new URLSearchParams(window.location.search).toString();
-    if (nextQuery === currentQuery) {
-      return;
-    }
+  const setPageSize = (size: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('pageSize', String(size));
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
-    window.history.replaceState({}, '', nextUrl);
-  }, [search, statusFilter, timeFilter, typeFilter, customFrom, customTo, page, pageSize]);
+  // returnTo URL for service detail links
+  const currentListUrl = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
 
   const dateRange = useMemo(() => {
     if (timeFilter === 'custom') {
@@ -266,7 +193,6 @@ export default function ServicesPage() {
 
   const filters = useMemo(() => ({
     status: statusFilter !== 'all' ? statusFilter : undefined,
-    // Free Service is a label based on validity window, not service_type
     type: typeFilter !== 'all' && typeFilter !== 'free_service' ? typeFilter : undefined,
     freeOnly: typeFilter === 'free_service',
     dateFrom: dateRange.from,
@@ -359,14 +285,6 @@ export default function ServicesPage() {
     }
   };
 
-  useEffect(() => {
-    if (!hasInitializedPageReset.current) {
-      hasInitializedPageReset.current = true;
-      return;
-    }
-    setPage(1);
-  }, [search, statusFilter, typeFilter, timeFilter, customFrom, customTo, pageSize]);
-
   const filtered = typeFilter === 'free_service'
     ? services.filter((s: any) => isFreeServiceActive(s))
     : services;
@@ -449,7 +367,7 @@ export default function ServicesPage() {
             <DateRangePicker
               from={customFrom}
               to={customTo}
-              onChange={(from, to) => { setCustomFrom(from); setCustomTo(to); }}
+              onChange={(from, to) => setCustomRange(from, to)}
             />
           )}
         </div>
@@ -458,7 +376,7 @@ export default function ServicesPage() {
       {/* Search + type filter */}
       <div className="flex flex-wrap gap-4">
         <div className="flex-1 min-w-[200px]">
-          <SearchBar value={search} onChange={setSearch} placeholder="Search by service #, customer, phone..." />
+          <SearchBar value={search} onChange={handleSearch} placeholder="Search by service #, customer, phone..." />
         </div>
         <select className="rounded-md border px-3 py-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="all">All Types</option>

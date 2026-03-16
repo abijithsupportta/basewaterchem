@@ -1,7 +1,8 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useDebouncedCallback } from 'use-debounce';
 import Link from 'next/link';
 import { Plus, Receipt, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,184 +58,98 @@ function parsePageSize(value: string | null, fallback: number): number {
   return [20, 50, 100].includes(parsed) ? parsed : fallback;
 }
 
-function getInvoiceFiltersFromUrl(): {
-  search: string;
-  status: InvoiceStatusFilter;
-  sortBy: InvoiceSortBy;
-  dateFilter: DateFilter;
-  customStartDate: string;
-  customEndDate: string;
-  page: number;
-  pageSize: number;
-} {
-  if (typeof window === 'undefined') {
-    return {
-      search: '',
-      status: 'all',
-      sortBy: 'invoice_date_desc',
-      dateFilter: 'all',
-      customStartDate: '',
-      customEndDate: '',
-      page: 1,
-      pageSize: 20,
-    };
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  const dateFilterParam = params.get('dateFilter');
-  const resolvedDateFilter = isDateFilter(dateFilterParam) ? dateFilterParam : 'all';
-  const customStartDate = resolvedDateFilter === 'custom' ? (params.get('dateFrom') || '') : '';
-  const customEndDate = resolvedDateFilter === 'custom' ? (params.get('dateTo') || '') : '';
-  const statusParam = params.get('status');
-  const sortParam = params.get('sort');
-
-  return {
-    search: params.get('search') || '',
-    status: isStatusFilter(statusParam) ? statusParam : 'all',
-    sortBy: isInvoiceSortBy(sortParam) ? sortParam : 'invoice_date_desc',
-    dateFilter: resolvedDateFilter,
-    customStartDate,
-    customEndDate,
-    page: parsePositiveInt(params.get('page'), 1),
-    pageSize: parsePageSize(params.get('pageSize'), 20),
-  };
-}
-
 export default function InvoicesPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const userRole = useUserRole();
-  const [page, setPage] = useState(() => getInvoiceFiltersFromUrl().page);
-  const [pageSize, setPageSize] = useState(() => getInvoiceFiltersFromUrl().pageSize);
-  const [search, setSearch] = useState(() => getInvoiceFiltersFromUrl().search);
-  const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>(() => getInvoiceFiltersFromUrl().status);
-  const [sortBy, setSortBy] = useState<InvoiceSortBy>(() => getInvoiceFiltersFromUrl().sortBy);
-  const [dateFilter, setDateFilter] = useState<DateFilter>(() => getInvoiceFiltersFromUrl().dateFilter);
-  const [customStartDate, setCustomStartDate] = useState(() => getInvoiceFiltersFromUrl().customStartDate);
-  const [customEndDate, setCustomEndDate] = useState(() => getInvoiceFiltersFromUrl().customEndDate);
+
+  // URL-based filter state
+  const search = searchParams.get('search') ?? '';
+  const statusFilter = isStatusFilter(searchParams.get('status')) ? searchParams.get('status')! as InvoiceStatusFilter : 'all';
+  const sortBy = isInvoiceSortBy(searchParams.get('sort')) ? searchParams.get('sort')! as InvoiceSortBy : 'invoice_date_desc';
+  const dateFilter = isDateFilter(searchParams.get('dateFilter')) ? searchParams.get('dateFilter')! as DateFilter : 'all';
+  const customStartDate = dateFilter === 'custom' ? (searchParams.get('dateFrom') ?? '') : '';
+  const customEndDate = dateFilter === 'custom' ? (searchParams.get('dateTo') ?? '') : '';
+  const page = parsePositiveInt(searchParams.get('page'), 1);
+  const pageSize = parsePageSize(searchParams.get('pageSize'), 20);
+
+  // Non-URL state
   const [latestCollectors, setLatestCollectors] = useState<Record<string, string>>({});
   const [latestCollectionAt, setLatestCollectionAt] = useState<Record<string, string>>({});
-  const hasInitializedPageReset = useRef(false);
 
-  const currentListUrl = useMemo(() => {
-    const params = new URLSearchParams();
+  // URL setter helpers
+  const handleSearch = useDebouncedCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value.trim()) params.set('search', value.trim()); else params.delete('search');
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  }, 300);
 
-    const trimmedSearch = search.trim();
-    if (trimmedSearch) params.set('search', trimmedSearch);
+  const setStatusFilter = (value: InvoiceStatusFilter) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') params.delete('status'); else params.set('status', value);
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (statusFilter !== 'all') params.set('status', statusFilter);
-    if (sortBy !== 'invoice_date_desc') params.set('sort', sortBy);
+  const setSortBy = (value: InvoiceSortBy) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'invoice_date_desc') params.delete('sort'); else params.set('sort', value);
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (dateFilter !== 'all') {
-      params.set('dateFilter', dateFilter);
-      if (dateFilter === 'custom') {
-        if (customStartDate) params.set('dateFrom', customStartDate);
-        if (customEndDate) params.set('dateTo', customEndDate);
-      }
-    }
-
-    if (page > 1) params.set('page', String(page));
-    if (pageSize !== 20) params.set('pageSize', String(pageSize));
-
-    const qs = params.toString();
-    return qs ? `/dashboard/invoices?${qs}` : '/dashboard/invoices';
-  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, page, pageSize]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const syncFromUrl = () => {
-      const next = getInvoiceFiltersFromUrl();
-      setSearch((prev) => (prev === next.search ? prev : next.search));
-      setStatusFilter((prev) => (prev === next.status ? prev : next.status));
-      setSortBy((prev) => (prev === next.sortBy ? prev : next.sortBy));
-      setDateFilter((prev) => (prev === next.dateFilter ? prev : next.dateFilter));
-      setCustomStartDate((prev) => (prev === next.customStartDate ? prev : next.customStartDate));
-      setCustomEndDate((prev) => (prev === next.customEndDate ? prev : next.customEndDate));
-      setPage((prev) => (prev === next.page ? prev : next.page));
-      setPageSize((prev) => (prev === next.pageSize ? prev : next.pageSize));
-    };
-
-    const onPopState = () => {
-      syncFromUrl();
-    };
-
-    window.addEventListener('popstate', onPopState);
-    return () => {
-      window.removeEventListener('popstate', onPopState);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    if (!search.trim()) {
-      params.delete('search');
-    } else {
-      params.set('search', search.trim());
-    }
-
-    if (statusFilter === 'all') {
-      params.delete('status');
-    } else {
-      params.set('status', statusFilter);
-    }
-
-    if (sortBy === 'invoice_date_desc') {
-      params.delete('sort');
-    } else {
-      params.set('sort', sortBy);
-    }
-
-    if (dateFilter === 'all') {
+  const setDateFilter = (value: DateFilter) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'all') {
       params.delete('dateFilter');
       params.delete('dateFrom');
       params.delete('dateTo');
     } else {
-      params.set('dateFilter', dateFilter);
-      if (dateFilter === 'custom') {
-        if (customStartDate) {
-          params.set('dateFrom', customStartDate);
-        } else {
-          params.delete('dateFrom');
-        }
-        if (customEndDate) {
-          params.set('dateTo', customEndDate);
-        } else {
-          params.delete('dateTo');
-        }
-      } else {
+      params.set('dateFilter', value);
+      if (value !== 'custom') {
         params.delete('dateFrom');
         params.delete('dateTo');
       }
     }
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (page <= 1) {
-      params.delete('page');
-    } else {
-      params.set('page', String(page));
-    }
+  const setCustomStartDate = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set('dateFrom', value); else params.delete('dateFrom');
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    if (pageSize === 20) {
-      params.delete('pageSize');
-    } else {
-      params.set('pageSize', String(pageSize));
-    }
+  const setCustomEndDate = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set('dateTo', value); else params.delete('dateTo');
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    const nextQuery = params.toString();
-    const currentQuery = new URLSearchParams(window.location.search).toString();
-    if (nextQuery === currentQuery) {
-      return;
-    }
+  const setPage = (newPage: number | ((p: number) => number)) => {
+    const nextPage = typeof newPage === 'function' ? newPage(page) : newPage;
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextPage <= 1) params.delete('page'); else params.set('page', String(nextPage));
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
-    window.history.replaceState({}, '', nextUrl);
+  const setPageSize = (size: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('pageSize', String(size));
+    params.delete('page');
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
-  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, page, pageSize]);
+  // returnTo URL for invoice detail links
+  const currentListUrl = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
 
   // Prevent technicians from accessing invoices
   useEffect(() => {
@@ -242,14 +157,6 @@ export default function InvoicesPage() {
       router.replace('/dashboard');
     }
   }, [userRole, router]);
-
-  useEffect(() => {
-    if (!hasInitializedPageReset.current) {
-      hasInitializedPageReset.current = true;
-      return;
-    }
-    setPage(1);
-  }, [search, statusFilter, sortBy, dateFilter, customStartDate, customEndDate, pageSize]);
 
   const dateRange = useMemo(() => {
     const now = new Date();
@@ -449,7 +356,7 @@ export default function InvoicesPage() {
                 Custom Range
               </Button>
             </div>
-            
+
             {/* Custom Date Range Inputs */}
             {dateFilter === 'custom' && (
               <div className="flex flex-wrap gap-3 items-center pt-2 border-t">
@@ -475,11 +382,7 @@ export default function InvoicesPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      setCustomStartDate('');
-                      setCustomEndDate('');
-                      setDateFilter('all');
-                    }}
+                    onClick={() => setDateFilter('all')}
                   >
                     Clear
                   </Button>
@@ -491,7 +394,7 @@ export default function InvoicesPage() {
       </Card>
 
       <div className="flex flex-wrap gap-4">
-        <div className="flex-1 min-w-[200px]"><SearchBar value={search} onChange={setSearch} placeholder="Search invoices..." /></div>
+        <div className="flex-1 min-w-[200px]"><SearchBar value={search} onChange={handleSearch} placeholder="Search invoices..." /></div>
         <select className="rounded-md border px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as InvoiceStatusFilter)}>
           <option value="all">All Status</option>
           <option value="pending_due">Pending Due</option>
@@ -583,3 +486,4 @@ export default function InvoicesPage() {
     </div>
   );
 }
+

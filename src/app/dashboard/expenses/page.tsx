@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Loader2, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,9 +49,29 @@ export default function ExpensesPage() {
   const userRole = useUserRole();
   const canManageExpenses = canCreateOrEdit(userRole as any);
   const { selectedBranchId } = useBranchSelection();
-  const [period, setPeriod] = useState<Period>('daily');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const period = (searchParams.get('period') ?? 'daily') as Period;
+  const customFrom = searchParams.get('from') ?? '';
+  const customTo = searchParams.get('to') ?? '';
+
+  const setPeriod = (value: Period) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('period', value);
+    params.delete('from');
+    params.delete('to');
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  const setCustomRange = (from: string, to: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('period', 'custom');
+    if (from) params.set('from', from); else params.delete('from');
+    if (to) params.set('to', to); else params.delete('to');
+    router.push(`${pathname}?${params.toString()}`);
+  };
   const [saving, setSaving] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
@@ -270,10 +291,7 @@ export default function ExpensesPage() {
           <DateRangePicker
             from={customFrom}
             to={customTo}
-            onChange={(from, to) => {
-              setCustomFrom(from);
-              setCustomTo(to);
-            }}
+            onChange={(from, to) => setCustomRange(from, to)}
           />
         )}
       </div>

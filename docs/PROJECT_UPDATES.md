@@ -3,6 +3,53 @@
 Canonical timeline of production-impacting updates, organized by date.
 
 ## 2026-03-16
+## 2026-03-17
+
+### URL-Based State Refactor — All List Pages
+
+- Timestamp: 2026-03-17 IST (+05:30).
+- Refactored ALL dashboard list pages to use URL-based state (`useSearchParams` + `useRouter`) instead of `React.useState` for search, page, pageSize, and filter parameters.
+- Installed `use-debounce` npm package for 300ms debounced search input.
+- Pattern applied: URL reads via `searchParams.get(...)`, setter helpers via `router.push(pathname + '?' + params)`, `useDebouncedCallback` for search.
+- Pages refactored to server components with `_queries.ts` + `_list.tsx` split:
+	- `dashboard/customers/page.tsx` → server component + `_queries.ts` + `_list.tsx`
+	- `dashboard/inventory/products/page.tsx` → server component + `_queries.ts` + `_list.tsx`
+	- `dashboard/services/history/page.tsx` → server component + `_queries.ts` + `_list.tsx`
+- Pages updated in-place (client component with URL state):
+	- `dashboard/branches/page.tsx` — URL-based search
+	- `dashboard/day-book/page.tsx` — URL-based time filter, custom date range, page, pageSize
+	- `dashboard/expenses/page.tsx` — URL-based period filter and custom date range
+	- `dashboard/invoices/page.tsx` — URL-based search, status, sort, date filter, pagination; removed `window.history.replaceState` and `popstate` sync
+	- `dashboard/services/page.tsx` — URL-based search, status, time filter, type filter, pagination; removed `window.history.replaceState` and `popstate` sync
+
+### Files Changed
+
+- `package.json` (use-debounce added)
+- `src/app/dashboard/customers/page.tsx`
+- `src/app/dashboard/customers/_queries.ts` (new)
+- `src/app/dashboard/customers/_list.tsx` (new)
+- `src/app/dashboard/inventory/products/page.tsx`
+- `src/app/dashboard/inventory/products/_queries.ts` (new)
+- `src/app/dashboard/inventory/products/_list.tsx` (new)
+- `src/app/dashboard/services/history/page.tsx`
+- `src/app/dashboard/services/history/_queries.ts` (new)
+- `src/app/dashboard/services/history/_list.tsx` (new)
+- `src/app/dashboard/branches/page.tsx`
+- `src/app/dashboard/day-book/page.tsx`
+- `src/app/dashboard/expenses/page.tsx`
+- `src/app/dashboard/invoices/page.tsx`
+- `src/app/dashboard/services/page.tsx`
+
+### Verification
+
+- TypeScript: zero errors
+- Production build: `npm run build` succeeded — all 39 pages compiled successfully
+
+### Issues Found During Work
+
+- `apply_patch` tool corrupted `invoices/page.tsx` when multiple sequential patches were applied — fixed by overwriting the full file via PowerShell `Set-Content`.
+- `day-book/page.tsx` had a misplaced `useEffect` (before `useCallback` declaration) from the previous session's failed partial patching — corrected by removing the orphaned block.
+
 
 ### List Pagination Return-State Fix (Invoices and Services)
 
