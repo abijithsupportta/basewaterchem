@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -33,8 +33,18 @@ function NewServicePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedCustomer = searchParams.get('customer');
-  const { customers, createCustomer, findByPhone } = useCustomers({ branchId: 'all', pageSize: 500 });
+  const [customerSearch, setCustomerSearch] = useState('');
+  const { customers, loading: customersLoading, createCustomer, findByPhone } = useCustomers({ branchId: 'all', pageSize: 100, search: customerSearch || undefined });
   const { branches, getDefaultBranch, loading: branchesLoading } = useBranches();
+
+  // Debounced customer search handler
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCustomerSearchChange = useCallback((search: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setCustomerSearch(search.trim());
+    }, 300);
+  }, []);
 
   // Quick-add customer state
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -205,7 +215,7 @@ function NewServicePageContent() {
                 </div>
                 {!showAddCustomer && (
                   <>
-                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={15} />
+                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} onSearchChange={handleCustomerSearchChange} loading={customersLoading && !!customerSearch} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={20} />
                     {errors.customer_id && <p className="text-sm text-destructive">{errors.customer_id.message}</p>}
                   </>
                 )}

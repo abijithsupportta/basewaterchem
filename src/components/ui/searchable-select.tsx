@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Search, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SearchableSelectOption {
@@ -13,6 +13,8 @@ interface SearchableSelectProps {
   options: SearchableSelectOption[];
   value?: string;
   onChange?: (value: string) => void;
+  onSearchChange?: (search: string) => void;
+  loading?: boolean;
   placeholder?: string;
   searchPlaceholder?: string;
   className?: string;
@@ -24,6 +26,8 @@ export function SearchableSelect({
   options,
   value,
   onChange,
+  onSearchChange,
+  loading: externalLoading,
   placeholder = 'Select...',
   searchPlaceholder = 'Search...',
   className,
@@ -109,15 +113,21 @@ export function SearchableSelect({
             <input
               ref={inputRef}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                onSearchChange?.(e.target.value);
+              }}
               placeholder={searchPlaceholder}
               className="flex h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
+            {externalLoading && <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin opacity-50" />}
           </div>
 
           {/* Options list */}
           <div className="max-h-60 overflow-y-auto p-1">
-            {filtered.length === 0 ? (
+            {externalLoading ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Searching...</p>
+            ) : filtered.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">No results found.</p>
             ) : (
               <>

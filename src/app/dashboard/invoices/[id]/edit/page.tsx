@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Loading } from '@/components/ui/loading';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -47,7 +47,8 @@ export default function EditInvoicePage() {
 function EditInvoiceContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { customers, createCustomer } = useCustomers({ branchId: 'all', pageSize: 500 });
+  const [customerSearch, setCustomerSearch] = useState('');
+  const { customers, loading: customersLoading, createCustomer } = useCustomers({ branchId: 'all', pageSize: 100, search: customerSearch || undefined });
   const { branches } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>(['manual']);
@@ -55,6 +56,15 @@ function EditInvoiceContent() {
   const [loading, setLoading] = useState(true);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
+
+  // Debounced customer search handler
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCustomerSearchChange = useCallback((search: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setCustomerSearch(search.trim());
+    }, 300);
+  }, []);
   const [newCust, setNewCust] = useState({
     full_name: '',
     phone: '',
@@ -376,7 +386,7 @@ function EditInvoiceContent() {
                 </div>
                 {!showAddCustomer && (
                   <>
-                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={15} />
+                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} onSearchChange={handleCustomerSearchChange} loading={customersLoading && !!customerSearch} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={20} />
                     {errors.customer_id && <p className="text-sm text-destructive">{errors.customer_id.message}</p>}
                   </>
                 )}
