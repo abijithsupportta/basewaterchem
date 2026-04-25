@@ -47,7 +47,7 @@ export default function EditInvoicePage() {
 function EditInvoiceContent() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { customers, createCustomer } = useCustomers();
+  const { customers, createCustomer } = useCustomers({ branchId: 'all', pageSize: 500 });
   const { branches } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>(['manual']);
@@ -323,7 +323,7 @@ function EditInvoiceContent() {
 
   if (loading) return <Loading />;
 
-  const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));
+  const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} • ${c.phone || 'No phone'} (${c.customer_code})` }));
   const amcPeriodOptions = [
     { value: '3', label: '3 Months' },
     { value: '4', label: '4 Months' },
@@ -376,7 +376,7 @@ function EditInvoiceContent() {
                 </div>
                 {!showAddCustomer && (
                   <>
-                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name or code..." />
+                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={15} />
                     {errors.customer_id && <p className="text-sm text-destructive">{errors.customer_id.message}</p>}
                   </>
                 )}

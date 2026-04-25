@@ -46,7 +46,7 @@ function NewInvoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedCustomer = searchParams.get('customer') || '';
-  const { customers, createCustomer } = useCustomers();
+  const { customers, createCustomer, findByPhone } = useCustomers({ branchId: 'all', pageSize: 500 });
   const { branches, getDefaultBranch, loading: branchesLoading } = useBranches();
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
   const [itemSourceTypes, setItemSourceTypes] = useState<('manual' | 'stock')[]>(['manual']);
@@ -54,6 +54,8 @@ function NewInvoiceContent() {
   // Quick-add customer state
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
+  const [foundExistingCustomer, setFoundExistingCustomer] = useState<any>(null);
+  const [checkingPhone, setCheckingPhone] = useState(false);
   const [newCust, setNewCust] = useState({ full_name: '', phone: '', email: '', address_line1: '', city: '', district: '', state: 'Kerala', pincode: '' });
 
   // Fetch inventory products
@@ -339,7 +341,7 @@ function NewInvoiceContent() {
     }
   };
 
-  const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} (${c.customer_code})` }));
+  const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.full_name} • ${c.phone || 'No phone'} (${c.customer_code})` }));
   const amcPeriodOptions = [
     { value: '3', label: '3 Months' },
     { value: '4', label: '4 Months' },
@@ -347,9 +349,39 @@ function NewInvoiceContent() {
     { value: '12', label: '12 Months' },
   ];
 
+  // Check for existing customer when phone number changes
+  const handlePhoneCheck = async (phone: string) => {
+    setFoundExistingCustomer(null);
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10) return;
+    setCheckingPhone(true);
+    try {
+      const existing = await findByPhone(digits);
+      if (existing) {
+        setFoundExistingCustomer(existing);
+      }
+    } catch { /* ignore */ }
+    finally { setCheckingPhone(false); }
+  };
+
+  const handleUseExistingCustomer = () => {
+    if (foundExistingCustomer) {
+      setValue('customer_id', foundExistingCustomer.id);
+      setShowAddCustomer(false);
+      setFoundExistingCustomer(null);
+      setNewCust({ full_name: '', phone: '', email: '', address_line1: '', city: '', district: '', state: 'Kerala', pincode: '' });
+      toast.success(`Selected existing customer: ${foundExistingCustomer.full_name}`);
+    }
+  };
+
   const handleAddCustomer = async () => {
     if (!newCust.full_name || !newCust.phone || !newCust.address_line1) {
       toast.error('Name, phone, and address are required');
+      return;
+    }
+    // Final duplicate check before creating
+    if (foundExistingCustomer) {
+      toast.error('A customer with this phone already exists. Use the existing customer or change the phone number.');
       return;
     }
     setAddingCustomer(true);
@@ -369,7 +401,11 @@ function NewInvoiceContent() {
       setNewCust({ full_name: '', phone: '', email: '', address_line1: '', city: '', district: '', state: 'Kerala', pincode: '' });
       toast.success(`Customer "${created.full_name}" added!`);
     } catch (error: any) {
-      toast.error(error.message || 'Failed to add customer');
+      if (error.message?.includes('phone number already exists')) {
+        toast.error('A customer with this phone number already exists. Please search for them in the dropdown instead.');
+      } else {
+        toast.error(error.message || 'Failed to add customer');
+      }
     } finally {
       setAddingCustomer(false);
     }
@@ -392,7 +428,7 @@ function NewInvoiceContent() {
                 </div>
                 {!showAddCustomer && (
                   <>
-                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name or code..." />
+                    <SearchableSelect options={customerOptions} value={watch('customer_id')} onChange={(v) => setValue('customer_id', v)} placeholder="Select customer..." searchPlaceholder="Search by name, phone, or code..." maxResults={15} />
                     {errors.customer_id && <p className="text-sm text-destructive">{errors.customer_id.message}</p>}
                   </>
                 )}
@@ -411,7 +447,7 @@ function NewInvoiceContent() {
                       <Label className="text-xs">Phone Number *</Label>
                       <div className="flex">
                         <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 bg-muted text-sm text-muted-foreground">+91</span>
-                        <Input className="rounded-l-none" value={newCust.phone} onChange={(e) => setNewCust((c) => ({ ...c, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="9876543210" maxLength={10} />
+                        <Input className="rounded-l-none" value={newCust.phone} onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 10); setNewCust((c) => ({ ...c, phone: val })); handlePhoneCheck(val); }} placeholder="9876543210" maxLength={10} />
                       </div>
                     </div>
                     <div className="space-y-1">
@@ -439,7 +475,27 @@ function NewInvoiceContent() {
                       <Input value={newCust.pincode} onChange={(e) => setNewCust((c) => ({ ...c, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="686001" maxLength={6} />
                     </div>
                   </div>
-                  <Button type="button" size="sm" onClick={handleAddCustomer} disabled={addingCustomer}>
+
+                  {/* Duplicate customer detection alert */}
+                  {checkingPhone && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking for existing customer...
+                    </div>
+                  )}
+                  {foundExistingCustomer && (
+                    <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 space-y-2">
+                      <p className="text-sm font-semibold text-amber-800">⚠️ Customer already exists with this phone!</p>
+                      <div className="text-sm text-amber-700">
+                        <p><strong>{foundExistingCustomer.full_name}</strong> ({foundExistingCustomer.customer_code})</p>
+                        <p>{foundExistingCustomer.phone} • {foundExistingCustomer.address_line1}, {foundExistingCustomer.city}</p>
+                      </div>
+                      <Button type="button" size="sm" variant="default" onClick={handleUseExistingCustomer}>
+                        Use This Customer
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button type="button" size="sm" onClick={handleAddCustomer} disabled={addingCustomer || !!foundExistingCustomer}>
                     {addingCustomer && <Loader2 className="mr-2 h-3 w-3 animate-spin" />} Save & Select Customer
                   </Button>
                 </div>

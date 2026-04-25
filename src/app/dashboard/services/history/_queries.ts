@@ -31,22 +31,43 @@ export async function getCompletedServices({
   const { data, count, error } = await query;
   if (error) throw error;
 
-  // If there's a search term, also look up by customer name and merge
+  // If there's a search term, also look up by customer name and phone, then merge
   if (q.trim() && data) {
     const esc = q.trim().replace(/%/g, '\\%').replace(/_/g, '\\_');
-    const { data: byCustomer } = await supabase
+    const digitsOnly = q.trim().replace(/\D/g, '');
+
+    // Search by customer name
+    const { data: byCustomerName } = await supabase
       .from('services')
-      .select('*, customer:customers!inner(full_name, customer_code)')
+      .select('*, customer:customers!inner(full_name, customer_code, phone)')
       .eq('status', 'completed')
       .ilike('customers.full_name', `%${esc}%`)
       .order('completed_date', { ascending: false })
       .limit(clampedSize);
 
-    if (byCustomer && byCustomer.length > 0) {
+    // Search by customer phone if query looks like a phone number
+    let byCustomerPhone: any[] = [];
+    if (digitsOnly.length >= 4) {
+      const phonePattern = `%${digitsOnly}%`;
+      const { data: phoneResults } = await supabase
+        .from('services')
+        .select('*, customer:customers!inner(full_name, customer_code, phone)')
+        .eq('status', 'completed')
+        .ilike('customers.phone', phonePattern)
+        .order('completed_date', { ascending: false })
+        .limit(clampedSize);
+      byCustomerPhone = phoneResults || [];
+    }
+
+    const allExtra = [...(byCustomerName || []), ...byCustomerPhone];
+    if (allExtra.length > 0) {
       const merged = [...data];
       const existingIds = new Set(data.map((s) => s.id));
-      for (const s of byCustomer) {
-        if (!existingIds.has(s.id)) merged.push(s);
+      for (const s of allExtra) {
+        if (!existingIds.has(s.id)) {
+          merged.push(s);
+          existingIds.add(s.id);
+        }
       }
       return {
         services: merged.slice(0, clampedSize),

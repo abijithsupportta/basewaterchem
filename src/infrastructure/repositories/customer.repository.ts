@@ -118,6 +118,29 @@ export class CustomerRepository {
         return data as unknown as Customer;
   }
 
+  async findByPhone(phone: string): Promise<Customer | null> {
+    // Normalize: strip non-digits, remove leading 91 country code
+    let digitsOnly = phone.replace(/\D/g, '');
+    if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+      digitsOnly = digitsOnly.slice(2);
+    }
+    if (digitsOnly.length === 13 && digitsOnly.startsWith('091')) {
+      digitsOnly = digitsOnly.slice(3);
+    }
+    if (!digitsOnly || digitsOnly.length < 10) return null;
+
+    // Search for exact 10-digit match, or with country code prefix
+    const { data, error } = await this.db
+      .from('customers')
+      .select(CUSTOMER_LIST_SELECT)
+      .or(`phone.eq.${digitsOnly},phone.eq.+91${digitsOnly},phone.eq.91${digitsOnly}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new DatabaseError(error.message);
+    return data ? (data as unknown as Customer) : null;
+  }
+
   async softDelete(id: string): Promise<void> {
     const { error } = await this.db
       .from('customers')

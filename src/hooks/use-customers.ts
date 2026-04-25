@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -7,7 +7,7 @@ import type { Customer, CustomerFormData } from '@/types';
 import { useBranchSelection } from '@/hooks/use-branch-selection';
 
 export function useCustomers(
-  searchQueryOrOptions?: string | { search?: string; page?: number; pageSize?: number }
+  searchQueryOrOptions?: string | { search?: string; page?: number; pageSize?: number; branchId?: string }
 ) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,13 +31,17 @@ export function useCustomers(
   const pageSize = typeof searchQueryOrOptions === 'string'
     ? 100
     : searchQueryOrOptions?.pageSize ?? 100;
+  // Allow callers to override the global branch filter (e.g. 'all' to show all customers)
+  const effectiveBranchId = typeof searchQueryOrOptions === 'object' && searchQueryOrOptions?.branchId !== undefined
+    ? searchQueryOrOptions.branchId
+    : selectedBranchId;
 
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
 
       const requestKey = JSON.stringify({
-        selectedBranchId,
+        effectiveBranchId,
         search: searchQuery ?? null,
         page,
         pageSize,
@@ -53,7 +57,7 @@ export function useCustomers(
 
       const promise = repo.findAll({
         search: searchQuery,
-        branchId: selectedBranchId,
+        branchId: effectiveBranchId,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
@@ -73,7 +77,7 @@ export function useCustomers(
     } finally {
       setLoading(false);
     }
-  }, [repo, searchQuery, selectedBranchId, page, pageSize]);
+  }, [repo, searchQuery, effectiveBranchId, page, pageSize]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -122,5 +126,7 @@ export function useCustomers(
     setCustomers((prev) => prev.filter((c) => c.id !== id));
   }, [repo]);
 
-  return { customers, loading, error, totalCount, fetchCustomers, getCustomer, createCustomer, updateCustomer, deleteCustomer };
+  const findByPhone = useCallback((phone: string) => repo.findByPhone(phone), [repo]);
+
+  return { customers, loading, error, totalCount, fetchCustomers, getCustomer, findByPhone, createCustomer, updateCustomer, deleteCustomer };
 }
