@@ -81,8 +81,16 @@ export async function POST(request: NextRequest) {
 
     // Handle empty SKU - convert to null to avoid unique constraint violation
     const productData = {
-      ...validatedData,
+      category_id: validatedData.category_id,
+      name: validatedData.name,
+      description: validatedData.description,
       sku: validatedData.sku?.trim() || null,
+      unit_price: validatedData.unit_price,
+      stock_quantity: 0, // Start at 0; use RPC to set initial stock properly
+      min_stock_level: validatedData.min_stock_level,
+      unit_of_measure: validatedData.unit_of_measure,
+      notes: validatedData.notes,
+      is_active: validatedData.is_active,
       created_by: staffId,
     };
 
@@ -98,6 +106,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
 
     // Log initial stock if quantity > 0
+    // The product was inserted with stock_quantity=0, now we add the initial stock via RPC
     if (validatedData.stock_quantity > 0) {
       await supabase.rpc('log_stock_transaction', {
         p_product_id: product.id,
@@ -107,6 +116,13 @@ export async function POST(request: NextRequest) {
         p_notes: 'Initial stock',
         p_created_by: staffId,
       });
+      // Re-fetch to get the updated stock_quantity
+      const { data: updatedProduct } = await supabase
+        .from('inventory_products')
+        .select('*, category:inventory_categories(id, name)')
+        .eq('id', product.id)
+        .single();
+      if (updatedProduct) Object.assign(product, updatedProduct);
     }
 
     return NextResponse.json(product, { status: 201 });
