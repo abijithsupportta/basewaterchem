@@ -188,14 +188,52 @@ export class InvoiceRepository {
   }
 
   async delete(id: string): Promise<void> {
-    // Delete invoice items first (child rows)
+    // 1. Fetch invoice items linked to inventory products to revert stock
+    const { data: items, error: fetchItemsError } = await this.db
+      .from('invoice_items')
+      .select('inventory_product_id, quantity')
+      .eq('invoice_id', id)
+      .not('inventory_product_id', 'is', null);
+
+    if (fetchItemsError) throw new DatabaseError(fetchItemsError.message);
+
+    if (items && items.length > 0) {
+      for (const item of items) {
+        if (!item.inventory_product_id) continue;
+        
+        // Fetch current stock quantity
+        const { data: product, error: fetchProductError } = await this.db
+          .from('inventory_products')
+          .select('stock_quantity')
+          .eq('id', item.inventory_product_id)
+          .single();
+
+        if (fetchProductError) continue;
+
+        // Revert the stock (increase by quantity sold)
+        await this.db
+          .from('inventory_products')
+          .update({ stock_quantity: (product.stock_quantity || 0) + (item.quantity || 0) })
+          .eq('id', item.inventory_product_id);
+      }
+    }
+
+    // 2. Delete linked stock transactions so they don't orphan
+    const { error: txError } = await this.db
+      .from('stock_transactions')
+      .delete()
+      .eq('reference_type', 'invoice')
+      .eq('reference_id', id);
+    if (txError) throw new DatabaseError(txError.message);
+
+    // 3. Delete invoice items first (child rows)
     const { error: itemsError } = await this.db
       .from('invoice_items')
       .delete()
       .eq('invoice_id', id);
     if (itemsError) throw new DatabaseError(itemsError.message);
 
-    // Delete the invoice
+    // 4. Delete the invoice
     const { error } = await this.db
       .from('invoices')
       .delete()

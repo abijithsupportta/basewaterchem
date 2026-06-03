@@ -166,9 +166,11 @@ export default function InvoiceDetailPage() {
     if (!confirmed) return;
     setDeleting(true);
     try {
-      const supabase = createBrowserClient();
-      const { error } = await supabase.from('invoices').delete().eq('id', id);
-      if (error) throw error;
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || 'Failed to delete invoice');
+      }
       toast.success('Invoice deleted');
       goBackToList();
     } catch (error: any) {

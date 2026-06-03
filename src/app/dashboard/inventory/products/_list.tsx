@@ -275,7 +275,9 @@ export function ProductsList({ products, total, totalPages, currentPage, stats, 
                     <tr key={product.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-3 px-4">
                         <div>
-                          <p className="font-medium">{product.name}</p>
+                          <Link href={`/dashboard/inventory/products/${product.id}`} className="font-medium hover:underline text-blue-600 dark:text-blue-400">
+                            {product.name}
+                          </Link>
                           {product.description && <p className="text-xs text-muted-foreground line-clamp-1">{product.description}</p>}
                         </div>
                       </td>

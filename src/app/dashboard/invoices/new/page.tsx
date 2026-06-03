@@ -193,160 +193,25 @@ function NewInvoiceContent() {
   const total = subtotal + taxAmount - discountAmount;
 
   const onSubmit = async (data: any) => {
-    const supabase = (await import('@/lib/supabase/client')).createBrowserClient();
-    let createdInvoiceId: string | null = null;
-    let createdAmcContractId: string | null = null;
-    let createdServiceId: string | null = null;
-
     try {
-      const { items: itemsData, amc_enabled, amc_period_months, invoice_number, ...invoiceData } = data;
-      const sanitizedInvoiceNumber = typeof invoice_number === 'string' ? invoice_number.trim() : '';
+      const res = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
 
-      const normalizedItems = (itemsData || []).map((item: any) => ({
-        ...item,
-        quantity: normalizeIntegerQuantity(item.quantity),
-        unit_price: Math.max(0, Number(item.unit_price) || 0),
-      }));
-
-      const stockLines = normalizeStockLines(
-        normalizedItems.map((item: any) => ({
-          productId: item.inventory_product_id,
-          quantity: item.quantity,
-          label: item.item_name,
-        }))
-      );
-
-      await validateStockAvailabilityForLines(supabase, stockLines);
-
-      const createdByStaffId = await getCurrentStaffId(supabase);
-
-      // Create the invoice
-      const { data: invoice, error } = await supabase.from('invoices').insert({
-        ...invoiceData,
-        invoice_number: sanitizedInvoiceNumber || null,
-        subtotal,
-        tax_amount: taxAmount,
-        total_amount: total,
-        balance_due: total,
-        amc_enabled: amc_enabled || false,
-        amc_period_months: amc_enabled ? amc_period_months : null,
-        created_by_staff_id: createdByStaffId,
-      }).select('id, invoice_number').single();
-      if (error) throw error;
-      createdInvoiceId = invoice.id;
-
-      let applyStockPromise: Promise<void> = Promise.resolve();
-
-      // Create invoice items
-      if (normalizedItems.length > 0) {
-        const itemsToInsert = normalizedItems.map((item: any, idx: number) => ({
-          invoice_id: invoice.id,
-          item_name: item.item_name || null,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.quantity * item.unit_price,
-          inventory_product_id: item.inventory_product_id || null,
-          sort_order: idx,
-        }));
-        const { error: insertItemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
-        if (insertItemsError) throw insertItemsError;
-
-        applyStockPromise = applyStockLines(supabase, {
-          lines: stockLines,
-          transactionType: 'sale',
-          referenceType: 'invoice',
-          referenceId: invoice.id,
-          referenceLabel: `Sold via Invoice ${invoice.invoice_number || invoice.id}`,
-          createdBy: createdByStaffId,
-        });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || 'Failed to create invoice');
       }
-
-      let amcPromise: Promise<void> = Promise.resolve();
-
-      if (amc_enabled && amc_period_months) {
-        amcPromise = (async () => {
-          const invoiceDate = new Date(invoiceData.invoice_date || new Date());
-          const firstServiceDate = new Date(invoiceDate);
-          firstServiceDate.setMonth(firstServiceDate.getMonth() + amc_period_months);
-          const freeServiceValidUntil = new Date(invoiceDate);
-          freeServiceValidUntil.setDate(freeServiceValidUntil.getDate() + 365);
-
-          const { data: amcContract, error: amcError } = await supabase.from('amc_contracts').insert({
-            customer_id: invoiceData.customer_id,
-            invoice_id: invoice.id,
-            start_date: invoiceDate.toISOString().split('T')[0],
-            end_date: firstServiceDate.toISOString().split('T')[0],
-            service_interval_months: amc_period_months,
-            total_services_included: 1,
-            services_completed: 0,
-            amount: total,
-            is_paid: false,
-            status: 'active',
-            next_service_date: firstServiceDate.toISOString().split('T')[0],
-          }).select('id').single();
-          if (amcError) throw amcError;
-
-          createdAmcContractId = amcContract.id;
-
-          const { data: createdService, error: srvError } = await supabase.from('services').insert({
-            customer_id: invoiceData.customer_id,
-            amc_contract_id: amcContract.id,
-            service_type: 'amc_service',
-            status: 'scheduled',
-            scheduled_date: firstServiceDate.toISOString().split('T')[0],
-            description: `AMC service - Invoice ${invoice.invoice_number || 'N/A'}`,
-            is_under_amc: true,
-            payment_status: 'not_applicable',
-            free_service_valid_until: freeServiceValidUntil.toISOString().split('T')[0],
-          }).select('id, service_number').single();
-          if (srvError) throw srvError;
-
-          createdServiceId = createdService.id;
-
-          const selectedCust = customers.find((c) => c.id === invoiceData.customer_id);
-          if (selectedCust?.email || selectedCust?.phone) {
-            notifyCustomer('service_scheduled', {
-              serviceId: createdService?.id,
-              customerEmail: selectedCust.email,
-              customerPhone: selectedCust.phone,
-              customerName: selectedCust.full_name,
-              serviceNumber: createdService?.service_number || invoice.invoice_number || 'New Service',
-              serviceType: 'Recurring Service',
-              scheduledDate: firstServiceDate.toISOString().split('T')[0],
-              description: `Recurring service scheduled from Invoice ${invoice.invoice_number || ''}`,
-            });
-          }
-        })();
-      }
-
-      await Promise.all([applyStockPromise, amcPromise]);
 
       toast.success(
-        amc_enabled
+        data.amc_enabled
           ? 'Invoice created with recurring service setup!'
           : 'Invoice created!'
       );
-      router.push(`/dashboard/invoices/${invoice.id}`);
+      router.push(`/dashboard/invoices/${payload.data.id}`);
     } catch (error: any) {
-      if (createdInvoiceId) {
-        try {
-          if (createdServiceId) {
-            await supabase.from('services').delete().eq('id', createdServiceId);
-          }
-          if (createdAmcContractId) {
-            await supabase.from('amc_contracts').delete().eq('id', createdAmcContractId);
-          }
-          await supabase.from('invoice_items').delete().eq('invoice_id', createdInvoiceId);
-          await supabase.from('invoices').delete().eq('id', createdInvoiceId);
-        } catch (cleanupError) {
-          console.error('Failed to rollback invoice creation after stock error:', cleanupError);
-        }
-      }
-      if (isDuplicateInvoiceNumberError(error)) {
-        toast.error('Invoice number already exists. Please use a unique invoice number.');
-        return;
-      }
       toast.error(error.message || 'Failed to create invoice');
     }
   };

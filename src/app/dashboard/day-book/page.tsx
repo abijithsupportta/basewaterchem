@@ -88,9 +88,8 @@ export default function DayBookPage() {
   const customFrom = searchParams.get('from') ?? '';
   const customTo = searchParams.get('to') ?? '';
   const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1);
-  const pageSize = [20, 50, 100].includes(parseInt(searchParams.get('pageSize') ?? '20'))
-    ? parseInt(searchParams.get('pageSize')!)
-    : 20;
+  const rawPageSize = parseInt(searchParams.get('pageSize') ?? '20', 10);
+  const pageSize = [20, 50, 100].includes(rawPageSize) ? rawPageSize : 20;
 
   const setTimeFilter = (value: string) => {
     const params = new URLSearchParams(searchParams.toString());
